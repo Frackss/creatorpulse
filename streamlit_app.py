@@ -1772,6 +1772,200 @@ IMPORTANT RULES:
             st.warning(
                 "Choose a creator above before generating a brief."
             )
+
+                # =================================================
+        # BRAND / COMPLIANCE REVIEW
+        # =================================================
+
+        st.divider()
+
+        st.header(
+            "7. Brand & Content Review"
+        )
+
+        st.write(
+            "CreatorPulse performs a first-pass review of a creator draft "
+            "against the brand guidelines supplied by the marketing team."
+        )
+
+        st.caption(
+            "Gemini only checks against the rules provided below. "
+            "A human reviewer makes the final approval decision."
+        )
+
+
+        # -------------------------------------------------
+        # BRAND GUIDELINES
+        # -------------------------------------------------
+
+        brand_rules = st.text_area(
+            "Brand Guidelines",
+            value="""1. Sponsored content must clearly disclose #ad.
+2. Do not say the restaurant or brand is "the best in NYC."
+3. Do not make unsupported health or nutrition claims.
+4. Do not negatively attack competing restaurants.
+5. Do not guarantee that every customer will have the same experience.""",
+            height=180
+        )
+
+
+        # -------------------------------------------------
+        # CREATOR DRAFT
+        # -------------------------------------------------
+
+        creator_draft = st.text_area(
+            "Creator Draft",
+            value="""I found the best restaurant in all of NYC and everyone is guaranteed to love it.
+
+NYC Dining Collective sent me here to check out this hidden gem. The food is incredible and you absolutely need to try it.""",
+            height=180
+        )
+
+
+        # -------------------------------------------------
+        # REVIEW BUTTON
+        # -------------------------------------------------
+
+        if st.button(
+            "🔍 Review Creator Draft"
+        ):
+
+            try:
+
+                with st.spinner(
+                    "Gemini is reviewing the draft..."
+                ):
+
+                    review_prompt = f"""
+You are performing a first-pass brand guideline review
+for a creator marketing campaign.
+
+Evaluate the creator draft ONLY against the supplied
+brand guidelines.
+
+BRAND
+
+{brand}
+
+
+BRAND GUIDELINES
+
+{brand_rules}
+
+
+CREATOR DRAFT
+
+{creator_draft}
+
+
+Return your review using exactly these sections:
+
+## Status
+
+Choose only one:
+
+PASS
+REVISE
+BLOCK
+
+
+## Summary
+
+Give a short explanation of the overall result.
+
+
+## Issues Found
+
+For every issue, provide:
+
+- Draft Excerpt
+- Brand Rule
+- Why It Conflicts
+- Suggested Revision
+
+If there are no issues, write:
+"No conflicts identified against the supplied guidelines."
+
+
+## Human Review Note
+
+Briefly explain what still requires human judgment.
+
+
+IMPORTANT RULES:
+
+- Evaluate ONLY against the supplied brand guidelines.
+- Do not invent additional brand rules.
+- Do not invent laws or legal requirements.
+- Do not make the final approval decision.
+- Do not rewrite the entire creator script unless necessary.
+- Keep suggested changes concise.
+"""
+
+                    review_response, review_model_used = (
+                        generate_with_fallback(
+                            review_prompt
+                        )
+                    )
+
+                    review_text = (
+                        review_response.text
+                    )
+
+                    # Save result for Step 15
+                    st.session_state[
+                        "compliance_review"
+                    ] = review_text
+
+                    st.session_state[
+                        "creator_draft"
+                    ] = creator_draft
+
+
+                st.success(
+                    "First-pass review complete!"
+                )
+
+                st.caption(
+                    f"Reviewed using "
+                    f"{review_model_used}"
+                )
+
+            except Exception as e:
+
+                st.error(
+                    "Content review failed."
+                )
+
+                st.code(
+                    str(e)
+                )
+
+
+        # -------------------------------------------------
+        # DISPLAY SAVED REVIEW
+        # -------------------------------------------------
+
+        if (
+            "compliance_review"
+            in st.session_state
+        ):
+
+            st.subheader(
+                "Review Results"
+            )
+
+            st.markdown(
+                st.session_state[
+                    "compliance_review"
+                ]
+            )
+
+            st.info(
+                "This review is decision support only. "
+                "The marketing team retains final approval."
+            )
+            
             
         # =================================================
         # GEMINI TREND INTERPRETATION
@@ -1780,7 +1974,7 @@ IMPORTANT RULES:
         st.divider()
 
         st.header(
-            "7. Gemini Trend Interpretation"
+            "8. Gemini Trend Interpretation"
         )
 
         st.write(
