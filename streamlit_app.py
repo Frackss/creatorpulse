@@ -1,6 +1,7 @@
 import streamlit as st
 import requests
 import pandas as pd
+import json
 
 from datetime import datetime, timedelta, timezone
 from google import genai
@@ -753,6 +754,509 @@ if (
                         "Not publicly available"
                     )
 
+                # =================================================
+        # CREATOR FIT SCORING
+        # =================================================
+
+        st.divider()
+
+        st.header(
+            "4. Creator Fit Scoring"
+        )
+
+        st.write(
+            "Gemini evaluates each shortlisted creator against "
+            "the campaign using five transparent criteria."
+        )
+
+        st.caption(
+            "Gemini scores the individual criteria. "
+            "CreatorPulse calculates the final weighted score."
+        )
+
+        with st.expander(
+            "How is Creator Fit calculated?"
+        ):
+
+            st.write(
+                """
+                **30% — Campaign Relevance**
+
+                How closely the creator's observed content relates
+                to the campaign and brand.
+
+                **25% — Trend Alignment**
+
+                How closely the creator's recent content connects
+                with the dining topic being analyzed.
+
+                **20% — Content Style Fit**
+
+                How compatible the observed content style appears
+                with the campaign.
+
+                **15% — Recent Performance**
+
+                Uses the supplied YouTube performance signals,
+                including momentum and view velocity.
+
+                **10% — Brand Fit**
+
+                Whether the supplied content appears appropriate
+                for the campaign based only on the available evidence.
+                """
+            )
+
+
+        if st.button(
+            "✨ Score Creator Fit"
+        ):
+
+            try:
+
+                creator_fit_results = []
+
+                progress = st.progress(0)
+
+                creator_list = list(
+                    creators.iterrows()
+                )
+
+                for position, (_, creator) in enumerate(
+                    creator_list
+                ):
+
+                    with st.spinner(
+                        f"Analyzing {creator['channel']}..."
+                    ):
+
+                        prompt = f"""
+You are assisting a creator marketing strategist.
+
+Evaluate the creator ONLY using the supplied evidence.
+
+CAMPAIGN
+
+Brand:
+{brand}
+
+Campaign Goal:
+{campaign_goal}
+
+Target Audience:
+{target_audience}
+
+YouTube Topic:
+{search_topic}
+
+
+CREATOR EVIDENCE
+
+Creator / Channel:
+{creator['channel']}
+
+Recent Video Title:
+{creator['title']}
+
+Recent Video Description:
+{creator['description']}
+
+Video Views:
+{int(creator['views'])}
+
+Public Subscriber Count:
+{int(creator['subscribers'])}
+
+Views Per Hour:
+{creator['views_per_hour']:.2f}
+
+Momentum Score:
+{int(creator['momentum_score'])}/100
+
+
+Score the creator from 0 to 100 on exactly these five dimensions:
+
+1. campaign_relevance
+How closely the observed content relates to the campaign.
+
+2. trend_alignment
+How closely the observed content aligns with the YouTube topic being analyzed.
+
+3. content_style_fit
+How compatible the observed content appears with the campaign's intended direction.
+
+4. recent_performance
+Evaluate only from the supplied performance information.
+
+5. brand_fit
+Evaluate suitability for this campaign only from the supplied evidence.
+
+Also provide:
+
+explanation:
+A concise explanation of why the creator may or may not fit.
+
+risk:
+One limitation, concern, or uncertainty the marketer should know.
+
+IMPORTANT RULES:
+
+Do not infer age, gender, income, ethnicity, location, or other audience demographics.
+
+Do not invent the creator's history.
+
+Do not claim to know their full audience.
+
+Do not invent performance data.
+
+Use only the information supplied.
+
+Return ONLY valid JSON using exactly this format:
+
+{{
+    "campaign_relevance": 0,
+    "trend_alignment": 0,
+    "content_style_fit": 0,
+    "recent_performance": 0,
+    "brand_fit": 0,
+    "explanation": "",
+    "risk": ""
+}}
+"""
+
+                        gemini_response = (
+                            client.models.generate_content(
+                                model=GEMINI_MODEL,
+                                contents=prompt
+                            )
+                        )
+
+                        raw_text = (
+                            gemini_response.text.strip()
+                        )
+
+                        # Remove markdown code fences if Gemini adds them
+                        raw_text = raw_text.replace(
+                            "```json",
+                            ""
+                        )
+
+                        raw_text = raw_text.replace(
+                            "```",
+                            ""
+                        ).strip()
+
+                        # Find only the JSON object
+                        start = raw_text.find("{")
+                        end = raw_text.rfind("}")
+
+                        if start == -1 or end == -1:
+
+                            raise ValueError(
+                                "Gemini did not return valid JSON."
+                            )
+
+                        result = json.loads(
+                            raw_text[
+                                start:end + 1
+                            ]
+                        )
+
+                        # ---------------------------------
+                        # KEEP SCORES BETWEEN 0 AND 100
+                        # ---------------------------------
+
+                        campaign_relevance = max(
+                            0,
+                            min(
+                                100,
+                                float(
+                                    result[
+                                        "campaign_relevance"
+                                    ]
+                                )
+                            )
+                        )
+
+                        trend_alignment = max(
+                            0,
+                            min(
+                                100,
+                                float(
+                                    result[
+                                        "trend_alignment"
+                                    ]
+                                )
+                            )
+                        )
+
+                        content_style_fit = max(
+                            0,
+                            min(
+                                100,
+                                float(
+                                    result[
+                                        "content_style_fit"
+                                    ]
+                                )
+                            )
+                        )
+
+                        recent_performance = max(
+                            0,
+                            min(
+                                100,
+                                float(
+                                    result[
+                                        "recent_performance"
+                                    ]
+                                )
+                            )
+                        )
+
+                        brand_fit = max(
+                            0,
+                            min(
+                                100,
+                                float(
+                                    result[
+                                        "brand_fit"
+                                    ]
+                                )
+                            )
+                        )
+
+
+                        # ---------------------------------
+                        # PYTHON CALCULATES FINAL SCORE
+                        # ---------------------------------
+
+                        overall_fit = round(
+                            campaign_relevance * 0.30
+                            +
+                            trend_alignment * 0.25
+                            +
+                            content_style_fit * 0.20
+                            +
+                            recent_performance * 0.15
+                            +
+                            brand_fit * 0.10
+                        )
+
+
+                        creator_fit_results.append(
+                            {
+                                "channel":
+                                    creator[
+                                        "channel"
+                                    ],
+
+                                "title":
+                                    creator[
+                                        "title"
+                                    ],
+
+                                "thumbnail":
+                                    creator[
+                                        "thumbnail"
+                                    ],
+
+                                "campaign_relevance":
+                                    round(
+                                        campaign_relevance
+                                    ),
+
+                                "trend_alignment":
+                                    round(
+                                        trend_alignment
+                                    ),
+
+                                "content_style_fit":
+                                    round(
+                                        content_style_fit
+                                    ),
+
+                                "recent_performance":
+                                    round(
+                                        recent_performance
+                                    ),
+
+                                "brand_fit":
+                                    round(
+                                        brand_fit
+                                    ),
+
+                                "overall_fit":
+                                    overall_fit,
+
+                                "explanation":
+                                    result.get(
+                                        "explanation",
+                                        ""
+                                    ),
+
+                                "risk":
+                                    result.get(
+                                        "risk",
+                                        ""
+                                    )
+                            }
+                        )
+
+                    progress.progress(
+                        (
+                            position + 1
+                        )
+                        /
+                        len(
+                            creator_list
+                        )
+                    )
+
+
+                creator_fit_results = sorted(
+                    creator_fit_results,
+                    key=lambda x: x[
+                        "overall_fit"
+                    ],
+                    reverse=True
+                )
+
+                st.session_state[
+                    "creator_fit_results"
+                ] = creator_fit_results
+
+                st.success(
+                    "Creator Fit analysis complete!"
+                )
+
+            except Exception as e:
+
+                st.error(
+                    "Creator Fit scoring failed."
+                )
+
+                st.code(
+                    str(e)
+                )
+
+
+        # =================================================
+        # DISPLAY CREATOR FIT RESULTS
+        # =================================================
+
+        if (
+            "creator_fit_results"
+            in st.session_state
+        ):
+
+            fit_results = (
+                st.session_state[
+                    "creator_fit_results"
+                ]
+            )
+
+            st.subheader(
+                "Creator Fit Results"
+            )
+
+            st.caption(
+                "Higher scores indicate stronger alignment "
+                "with this specific campaign based on the "
+                "limited evidence supplied."
+            )
+
+            for rank, result in enumerate(
+                fit_results,
+                start=1
+            ):
+
+                st.divider()
+
+                col1, col2 = (
+                    st.columns(
+                        [1, 3]
+                    )
+                )
+
+                with col1:
+
+                    if result[
+                        "thumbnail"
+                    ]:
+
+                        st.image(
+                            result[
+                                "thumbnail"
+                            ],
+                            use_container_width=True
+                        )
+
+                with col2:
+
+                    st.write(
+                        f"### #{rank} — "
+                        f"{result['channel']}"
+                    )
+
+                    st.metric(
+                        "Overall Campaign Fit",
+                        f"{result['overall_fit']}/100"
+                    )
+
+                    score_col1, score_col2 = (
+                        st.columns(2)
+                    )
+
+                    with score_col1:
+
+                        st.write(
+                            "**Campaign Relevance:** "
+                            f"{result['campaign_relevance']}/100"
+                        )
+
+                        st.write(
+                            "**Trend Alignment:** "
+                            f"{result['trend_alignment']}/100"
+                        )
+
+                        st.write(
+                            "**Content Style Fit:** "
+                            f"{result['content_style_fit']}/100"
+                        )
+
+                    with score_col2:
+
+                        st.write(
+                            "**Recent Performance:** "
+                            f"{result['recent_performance']}/100"
+                        )
+
+                        st.write(
+                            "**Brand Fit:** "
+                            f"{result['brand_fit']}/100"
+                        )
+
+                    st.write(
+                        "**Why this creator may fit:**"
+                    )
+
+                    st.write(
+                        result[
+                            "explanation"
+                        ]
+                    )
+
+                    st.write(
+                        "**Limitation / Watchout:**"
+                    )
+
+                    st.write(
+                        result[
+                            "risk"
+                        ]
+                    )
+
 
         # =================================================
         # GEMINI TREND INTERPRETATION
@@ -761,7 +1265,7 @@ if (
         st.divider()
 
         st.header(
-            "4. Gemini Trend Interpretation"
+            "5. Gemini Trend Interpretation"
         )
 
         st.write(
