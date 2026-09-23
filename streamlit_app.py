@@ -1547,7 +1547,215 @@ Return ONLY valid JSON using exactly this format:
                 "Run the YouTube discovery step first."
             )
 
-        
+                # =================================================
+        # PERSONALIZED CREATOR BRIEF
+        # =================================================
+
+        st.divider()
+
+        st.header(
+            "6. Personalized Creator Brief"
+        )
+
+        st.write(
+            "Gemini turns the campaign, trend, and selected creator "
+            "into a creator-specific campaign brief."
+        )
+
+        st.caption(
+            "The brief uses only the campaign information and "
+            "observed creator content available in CreatorPulse."
+        )
+
+
+        # -------------------------------------------------
+        # CHECK THAT A CREATOR HAS BEEN SELECTED
+        # -------------------------------------------------
+
+        if (
+            "selected_creator"
+            in st.session_state
+        ):
+
+            selected_creator = (
+                st.session_state[
+                    "selected_creator"
+                ]
+            )
+
+            st.write(
+                f"**Selected Creator:** "
+                f"{selected_creator['channel']}"
+            )
+
+
+            if st.button(
+                "✨ Generate Personalized Brief"
+            ):
+
+                try:
+
+                    with st.spinner(
+                        "Gemini is creating the campaign brief..."
+                    ):
+
+                        brief_prompt = f"""
+You are assisting a creator marketing strategist.
+
+Create a concise creator-specific campaign brief using ONLY
+the information supplied below.
+
+
+CAMPAIGN
+
+Brand:
+{brand}
+
+Campaign Goal:
+{campaign_goal}
+
+Target Audience:
+{target_audience}
+
+YouTube Topic / Emerging Content Area:
+{search_topic}
+
+
+SELECTED CREATOR
+
+Creator / Channel:
+{selected_creator['channel']}
+
+Recent Video:
+{selected_creator['title']}
+
+Recent Video Description:
+{selected_creator['description']}
+
+Recent Video Views:
+{selected_creator['views']}
+
+Public Subscriber Count:
+{selected_creator['subscribers']}
+
+Momentum Score:
+{selected_creator['momentum_score']}/100
+
+
+Create the brief using exactly these sections:
+
+## Campaign Concept
+
+Give the campaign idea a short, memorable title.
+
+## Why This Creator Fits
+
+Explain why the observed creator content could fit this campaign.
+
+## Opening Hook
+
+Suggest one possible opening hook for the creator's video.
+
+## Creative Direction
+
+Describe the overall approach for the content.
+
+## Key Talking Points
+
+Provide 3 to 5 concise talking points.
+
+## Required Campaign Elements
+
+List the elements the brand should require.
+
+## Things to Avoid
+
+List 2 to 4 things the creator should avoid.
+
+## Call to Action
+
+Provide one suggested call to action.
+
+
+IMPORTANT RULES:
+
+- Use only the supplied evidence.
+- Do not invent facts about the creator.
+- Do not claim to know their audience demographics.
+- Do not impersonate the creator.
+- Do not say the creator personally likes the brand unless that information was supplied.
+- Preserve creator flexibility instead of writing a complete script.
+- Keep the brief concise and presentation-ready.
+"""
+
+                        brief_response, brief_model_used = (
+                            generate_with_fallback(
+                                brief_prompt
+                            )
+                        )
+
+                        generated_brief = (
+                            brief_response.text
+                        )
+
+                        # Save the brief for later steps
+                        st.session_state[
+                            "generated_brief"
+                        ] = generated_brief
+
+
+                    st.success(
+                        "Personalized brief created!"
+                    )
+
+                    st.caption(
+                        f"Generated using "
+                        f"{brief_model_used}"
+                    )
+
+                except Exception as e:
+
+                    st.error(
+                        "Brief generation failed."
+                    )
+
+                    st.code(
+                        str(e)
+                    )
+
+
+            # -------------------------------------------------
+            # DISPLAY SAVED BRIEF
+            # -------------------------------------------------
+
+            if (
+                "generated_brief"
+                in st.session_state
+            ):
+
+                st.subheader(
+                    "Campaign Brief"
+                )
+
+                st.markdown(
+                    st.session_state[
+                        "generated_brief"
+                    ]
+                )
+
+                st.info(
+                    "This is an AI-generated first draft. "
+                    "The marketing team can revise it before "
+                    "sending it to the creator."
+                )
+
+
+        else:
+
+            st.warning(
+                "Choose a creator above before generating a brief."
+            )
+            
         # =================================================
         # GEMINI TREND INTERPRETATION
         # =================================================
@@ -1555,7 +1763,7 @@ Return ONLY valid JSON using exactly this format:
         st.divider()
 
         st.header(
-            "6. Gemini Trend Interpretation"
+            "7. Gemini Trend Interpretation"
         )
 
         st.write(
