@@ -2,9 +2,11 @@ import streamlit as st
 import requests
 import pandas as pd
 import json
+import time
 
 from datetime import datetime, timedelta, timezone
 from google import genai
+from google.genai import types
 
 
 # =========================================================
@@ -41,7 +43,8 @@ YOUTUBE_API_KEY = st.secrets["YOUTUBE_API_KEY"]
 GEMINI_MODELS = [
     "gemini-3.8-flash",
     "gemini-3.7-flash",
-    "gemini-3.6-flash"
+    "gemini-3.6-flash",
+    "gemini-3.5-flash-lite"
 ]
 
 
@@ -59,31 +62,45 @@ def generate_with_fallback(prompt):
 
     for model_name in GEMINI_MODELS:
 
-        try:
+        # Try each model up to 2 times
+        for attempt in range(2):
 
-            response = client.models.generate_content(
-                model=model_name,
-                contents=prompt
-            )
+            try:
 
-            return response, model_name
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        thinking_config=types.ThinkingConfig(
+                            thinking_level="low"
+                        )
+                    )
+                )
 
-        except Exception as e:
+                return response, model_name
 
-            last_error = e
+            except Exception as e:
 
-            # Try the next model only for temporary overload/server errors
-            error_text = str(e)
+                last_error = e
 
-            if (
-                "503" in error_text
-                or "UNAVAILABLE" in error_text
-                or "high demand" in error_text.lower()
-            ):
-                continue
+                error_text = str(e)
 
-            # For other errors, stop immediately
-            raise e
+                temporary_error = (
+                    "503" in error_text
+                    or "UNAVAILABLE" in error_text
+                    or "high demand" in error_text.lower()
+                )
+
+                if temporary_error:
+
+                    # Wait briefly before retrying
+                    time.sleep(2)
+
+                    continue
+
+                # If it is not a temporary 503,
+                # stop and show the real error.
+                raise e
 
     raise last_error
 
