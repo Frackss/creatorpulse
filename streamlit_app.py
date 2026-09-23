@@ -1965,6 +1965,144 @@ IMPORTANT RULES:
                 "This review is decision support only. "
                 "The marketing team retains final approval."
             )
+
+                # =================================================
+        # FINAL HUMAN APPROVAL
+        # =================================================
+
+        st.divider()
+
+        st.header(
+            "8. Final Human Approval"
+        )
+
+        st.write(
+            "Gemini provides decision support, but the marketing team "
+            "makes the final campaign approval decision."
+        )
+
+
+        # Only show approval controls after a review exists
+        if (
+            "compliance_review"
+            in st.session_state
+        ):
+
+            final_decision = st.radio(
+                "Final Campaign Decision",
+                [
+                    "Needs Revision",
+                    "Approved for Launch"
+                ],
+                index=0
+            )
+
+
+            reviewer_notes = st.text_area(
+                "Reviewer Notes (optional)",
+                placeholder=(
+                    "Add any comments, required changes, "
+                    "or approval notes here."
+                ),
+                height=120
+            )
+
+
+            if st.button(
+                "Confirm Final Decision"
+            ):
+
+                st.session_state[
+                    "final_decision"
+                ] = final_decision
+
+                st.session_state[
+                    "reviewer_notes"
+                ] = reviewer_notes
+
+
+                if (
+                    final_decision
+                    ==
+                    "Approved for Launch"
+                ):
+
+                    st.success(
+                        "✅ Campaign approved for launch."
+                    )
+
+                else:
+
+                    st.warning(
+                        "⚠️ Campaign requires revision before launch."
+                    )
+
+
+        else:
+
+            st.info(
+                "Run the Brand & Content Review above "
+                "before making a final decision."
+            )
+
+
+        # -------------------------------------------------
+        # DISPLAY SAVED FINAL DECISION
+        # -------------------------------------------------
+
+        if (
+            "final_decision"
+            in st.session_state
+        ):
+
+            st.subheader(
+                "Final Decision"
+            )
+
+            decision = (
+                st.session_state[
+                    "final_decision"
+                ]
+            )
+
+            if (
+                decision
+                ==
+                "Approved for Launch"
+            ):
+
+                st.success(
+                    "✅ Approved for Launch"
+                )
+
+            else:
+
+                st.warning(
+                    "⚠️ Needs Revision"
+                )
+
+
+            if (
+                st.session_state.get(
+                    "reviewer_notes"
+                )
+            ):
+
+                st.write(
+                    "**Reviewer Notes:**"
+                )
+
+                st.write(
+                    st.session_state[
+                        "reviewer_notes"
+                    ]
+                )
+
+
+            st.caption(
+                "Final approval is made by the human marketing team, "
+                "not by the AI system."
+            )
             
             
         # =================================================
@@ -1974,7 +2112,7 @@ IMPORTANT RULES:
         st.divider()
 
         st.header(
-            "8. Gemini Trend Interpretation"
+            "9. Gemini Trend Interpretation"
         )
 
         st.write(
