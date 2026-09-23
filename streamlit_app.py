@@ -1367,12 +1367,10 @@ Important rules:
 - Keep the response concise and useful for a marketing team.
 """
 
-                    gemini_response = (
-                        client.models.generate_content(
-                            model=GEMINI_MODEL,
-                            contents=prompt
-                        )
-                    )
+                gemini_response, model_used = generate_with_fallback(
+                    prompt
+                )
+        
 
                 st.success(
                     "Gemini analysis complete!"
