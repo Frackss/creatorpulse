@@ -524,7 +524,7 @@ st.caption(
 
 
 if st.button(
-    "🔎 Find NYC Dining Opportunities"
+    "🔎 Find Creator Opportunities"
 ):
 
     try:
