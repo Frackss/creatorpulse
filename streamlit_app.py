@@ -1293,6 +1293,261 @@ Return ONLY valid JSON using exactly this format:
                     )
 
 
+                # =================================================
+        # HUMAN CREATOR SELECTION
+        # =================================================
+
+        st.divider()
+
+        st.header(
+            "5. Human Creator Selection"
+        )
+
+        st.write(
+            "CreatorPulse provides recommendations, but the marketer "
+            "makes the final creator decision."
+        )
+
+
+        # -------------------------------------------------
+        # BUILD CREATOR OPTIONS
+        # -------------------------------------------------
+
+        creator_options = []
+
+        fit_lookup = {}
+
+
+        # If Creator Fit worked, use the ranked results
+        if (
+            "creator_fit_results"
+            in st.session_state
+            and st.session_state[
+                "creator_fit_results"
+            ]
+        ):
+
+            fit_results = st.session_state[
+                "creator_fit_results"
+            ]
+
+            for result in fit_results:
+
+                creator_options.append(
+                    result["channel"]
+                )
+
+                fit_lookup[
+                    result["channel"]
+                ] = result
+
+
+        # If Creator Fit failed, fall back to the shortlist
+        else:
+
+            creator_options = (
+                creators[
+                    "channel"
+                ]
+                .tolist()
+            )
+
+
+        # Remove duplicates while keeping order
+        creator_options = list(
+            dict.fromkeys(
+                creator_options
+            )
+        )
+
+
+        # -------------------------------------------------
+        # CREATOR DROPDOWN
+        # -------------------------------------------------
+
+        if creator_options:
+
+            selected_creator_name = st.selectbox(
+                "Choose the creator you want to continue with:",
+                creator_options
+            )
+
+
+            # ---------------------------------------------
+            # FIND FULL CREATOR DATA
+            # ---------------------------------------------
+
+            selected_rows = (
+                creators[
+                    creators[
+                        "channel"
+                    ]
+                    ==
+                    selected_creator_name
+                ]
+            )
+
+            if not selected_rows.empty:
+
+                selected_creator = (
+                    selected_rows.iloc[0]
+                )
+
+                # Save creator information for later steps
+                st.session_state[
+                    "selected_creator"
+                ] = {
+                    "channel":
+                        selected_creator[
+                            "channel"
+                        ],
+
+                    "channel_id":
+                        selected_creator[
+                            "channel_id"
+                        ],
+
+                    "title":
+                        selected_creator[
+                            "title"
+                        ],
+
+                    "description":
+                        selected_creator[
+                            "description"
+                        ],
+
+                    "views":
+                        int(
+                            selected_creator[
+                                "views"
+                            ]
+                        ),
+
+                    "subscribers":
+                        int(
+                            selected_creator[
+                                "subscribers"
+                            ]
+                        ),
+
+                    "views_per_hour":
+                        float(
+                            selected_creator[
+                                "views_per_hour"
+                            ]
+                        ),
+
+                    "momentum_score":
+                        int(
+                            selected_creator[
+                                "momentum_score"
+                            ]
+                        ),
+
+                    "thumbnail":
+                        selected_creator[
+                            "thumbnail"
+                        ]
+                }
+
+
+                # -----------------------------------------
+                # DISPLAY SELECTED CREATOR
+                # -----------------------------------------
+
+                st.success(
+                    f"Selected Creator: "
+                    f"{selected_creator_name}"
+                )
+
+                col1, col2 = st.columns(
+                    [1, 3]
+                )
+
+                with col1:
+
+                    if selected_creator[
+                        "thumbnail"
+                    ]:
+
+                        st.image(
+                            selected_creator[
+                                "thumbnail"
+                            ],
+                            use_container_width=True
+                        )
+
+
+                with col2:
+
+                    st.write(
+                        f"### {selected_creator_name}"
+                    )
+
+                    st.write(
+                        f"**Recent Video:** "
+                        f"{selected_creator['title']}"
+                    )
+
+                    st.write(
+                        f"**Momentum Score:** "
+                        f"{int(selected_creator['momentum_score'])}/100"
+                    )
+
+
+                    if (
+                        selected_creator_name
+                        in fit_lookup
+                    ):
+
+                        selected_fit = (
+                            fit_lookup[
+                                selected_creator_name
+                            ]
+                        )
+
+                        st.write(
+                            f"**Campaign Fit:** "
+                            f"{selected_fit['overall_fit']}/100"
+                        )
+
+
+                    if (
+                        int(
+                            selected_creator[
+                                "subscribers"
+                            ]
+                        )
+                        > 0
+                    ):
+
+                        st.write(
+                            f"**Subscribers:** "
+                            f"{int(selected_creator['subscribers']):,}"
+                        )
+
+                    else:
+
+                        st.write(
+                            "**Subscribers:** "
+                            "Not publicly available"
+                        )
+
+
+                st.info(
+                    "AI provides recommendations. "
+                    "The marketer makes the final creator selection."
+                )
+
+        else:
+
+            st.warning(
+                "No creators are available yet. "
+                "Run the YouTube discovery step first."
+            )
+
+        
         # =================================================
         # GEMINI TREND INTERPRETATION
         # =================================================
@@ -1300,7 +1555,7 @@ Return ONLY valid JSON using exactly this format:
         st.divider()
 
         st.header(
-            "5. Gemini Trend Interpretation"
+            "6. Gemini Trend Interpretation"
         )
 
         st.write(
