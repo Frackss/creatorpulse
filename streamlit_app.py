@@ -38,10 +38,11 @@ GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
 YOUTUBE_API_KEY = st.secrets["YOUTUBE_API_KEY"]
 
 # Keep the Gemini model in one place so it is easy to change later.
-GEMINI_MODEL = st.secrets.get(
-    "GEMINI_MODEL",
-    "gemini-3.8-flash"
-)
+GEMINI_MODELS = [
+    "gemini-3.8-flash",
+    "gemini-3.7-flash",
+    "gemini-3.6-flash"
+]
 
 
 # =========================================================
@@ -52,6 +53,39 @@ client = genai.Client(
     api_key=GEMINI_API_KEY
 )
 
+def generate_with_fallback(prompt):
+
+    last_error = None
+
+    for model_name in GEMINI_MODELS:
+
+        try:
+
+            response = client.models.generate_content(
+                model=model_name,
+                contents=prompt
+            )
+
+            return response, model_name
+
+        except Exception as e:
+
+            last_error = e
+
+            # Try the next model only for temporary overload/server errors
+            error_text = str(e)
+
+            if (
+                "503" in error_text
+                or "UNAVAILABLE" in error_text
+                or "high demand" in error_text.lower()
+            ):
+                continue
+
+            # For other errors, stop immediately
+            raise e
+
+    raise last_error
 
 # =========================================================
 # YOUTUBE API HELPER
@@ -924,11 +958,12 @@ Return ONLY valid JSON using exactly this format:
 }}
 """
 
-                        gemini_response = (
-                            client.models.generate_content(
-                                model=GEMINI_MODEL,
-                                contents=prompt
-                            )
+                        gemini_response, model_used = generate_with_fallback(
+                            prompt
+                        )
+
+                        st.caption(
+                            f"AI analysis completed using {model_used}"
                         )
 
                         raw_text = (
