@@ -164,6 +164,7 @@ PERSISTENT_WIDGET_KEYS = (
     "brand", "campaign_goal", "target_audience", "search_topic",
     "creator_choice", "brand_rules_input", "creator_draft_input",
     "final_decision_input", "reviewer_notes_input",
+    "manual_review_status", "manual_review_notes", "manual_review_confirmed",
 )
 for widget_key in PERSISTENT_WIDGET_KEYS:
     if widget_key in st.session_state:
@@ -2261,6 +2262,50 @@ IMPORTANT RULES:
                 st.code(str(e))
 
 
+    with st.expander("Manual review — continue without Gemini"):
+        st.write(
+            "If Gemini is unavailable or its quota is exhausted, review the "
+            "creator draft against the brand guidelines yourself. This records "
+            "a human review, not an AI review or final launch approval."
+        )
+        manual_status = st.radio(
+            "Manual review result", ["REVISE", "PASS", "BLOCK"],
+            key="manual_review_status",
+        )
+        manual_notes = st.text_area(
+            "Manual review notes",
+            placeholder="Record any issues, required revisions, or why the draft passes.",
+            key="manual_review_notes",
+        )
+        manual_confirmed = st.checkbox(
+            "I reviewed the current creator draft against the brand guidelines.",
+            key="manual_review_confirmed",
+        )
+        manual_ready = (
+            manual_confirmed and bool(manual_notes.strip())
+            and bool(creator_draft.strip()) and bool(brand_rules.strip())
+        )
+        if st.button("Save manual review", disabled=not manual_ready):
+            st.session_state["compliance_review"] = (
+                "## Review method\n\nManual human review — no AI review was performed.\n\n"
+                f"## Status\n\n{manual_status}\n\n"
+                f"## Summary\n\n{manual_notes.strip()}\n\n"
+                "## Human Review Note\n\n"
+                "A human reviewed the creator draft against the supplied brand guidelines. "
+                "Final campaign approval remains a separate decision."
+            )
+            st.session_state["creator_draft"] = creator_draft
+            # A new review must receive a fresh final approval.
+            for decision_key in ("final_decision", "reviewer_notes", "final_decision_input", "reviewer_notes_input"):
+                st.session_state.pop(decision_key, None)
+            st.success("Manual review saved. You can continue to Approve.")
+        if not manual_ready:
+            st.caption(
+                "Provide a draft and brand guidelines, add review notes, and "
+                "confirm you reviewed them to save a manual review."
+            )
+
+
     # -------------------------------------------------
     # DISPLAY SAVED REVIEW
     # -------------------------------------------------
@@ -2508,6 +2553,8 @@ with st.sidebar:
             if line.strip().strip("*") in ("PASS", "REVISE", "BLOCK"):
                 review_status = line.strip().strip("*")
                 break
+    if st.session_state.get("compliance_review", "").startswith("## Review method\n\nManual human review"):
+        review_status = f"Manual · {review_status}"
     st.write(f"**Review status:** {review_status}")
     st.write(f"**Final decision:** {st.session_state.get('final_decision') or '—'}")
     for number, name in enumerate(STAGES, 1):
@@ -2532,7 +2579,7 @@ with next_column:
             st.caption({
                 1: "Find creator opportunities to continue.",
                 2: "Choose a creator in Human Creator Selection to continue.",
-                3: "Run Review Creator Draft to continue.",
+                3: "Run Review Creator Draft or save a manual review to continue.",
             }[st.session_state.stage])
     else:
         st.button("Start a new campaign", on_click=start_new_campaign)
