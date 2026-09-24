@@ -3,6 +3,8 @@ import requests
 import pandas as pd
 import json
 import time
+import base64
+from pathlib import Path
 
 from datetime import datetime, timedelta, timezone
 from google import genai
@@ -105,7 +107,20 @@ st.markdown(
         font-size: 0.8rem;
         font-weight: 600;
     }
+    .cp-brand {
+        display: flex;
+        align-items: center;
+        gap: clamp(0.65rem, 2vw, 1.25rem);
+        margin: 1.25rem 0;
+    }
+    .cp-logo {
+        width: clamp(2.5rem, 6vw, 4.75rem);
+        height: auto;
+        flex-shrink: 0;
+    }
     .cp-title {
+        margin: 0;
+        padding: 0;
         font-family: 'Bricolage Grotesque', sans-serif;
         font-weight: 800;
         font-size: clamp(2.8rem, 7vw, 5.2rem);
@@ -119,11 +134,18 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+logo_data = base64.b64encode(
+    (Path(__file__).parent / "assets" / "creatorpulse-logo.svg").read_bytes()
+).decode("ascii")
+
 st.markdown(
-    """
+    f"""
     <div class="cp-hero">
       <span class="cp-badge">NYU SPS × Google Hackathon</span>
-      <h1 class="cp-title">CreatorPulse<span class="dot">.</span></h1>
+      <div class="cp-brand">
+        <img class="cp-logo" src="data:image/svg+xml;base64,{logo_data}" alt="" />
+        <h1 class="cp-title">CreatorPulse<span class="dot">.</span></h1>
+      </div>
       <p class="cp-sub">Find NYC dining creators who are gaining momentum right now, check how well they fit your campaign, and take one from brief to approval.</p>
     </div>
     """,
