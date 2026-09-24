@@ -153,6 +153,22 @@ st.markdown(
 )
 
 
+if "stage" not in st.session_state:
+    st.session_state.stage = 1
+
+STAGES = ["Discover", "Shortlist", "Create", "Approve"]
+
+# Streamlit normally removes widget state when its stage is hidden.
+# Re-saving these keys keeps campaign inputs and unfinished edits across stages.
+PERSISTENT_WIDGET_KEYS = (
+    "brand", "campaign_goal", "target_audience", "search_topic",
+    "creator_choice", "brand_rules_input", "creator_draft_input",
+    "final_decision_input", "reviewer_notes_input",
+)
+for widget_key in PERSISTENT_WIDGET_KEYS:
+    if widget_key in st.session_state:
+        st.session_state[widget_key] = st.session_state[widget_key]
+
 # =========================================================
 # READ API KEYS FROM STREAMLIT SECRETS
 # =========================================================
@@ -629,329 +645,512 @@ def find_recent_videos(
     )
 
 
-# =========================================================
-# CAMPAIGN SETUP
-# =========================================================
+# Stage navigation is gated by the existing workflow results.
+def stage_ready(stage):
+    if stage == 1:
+        results = st.session_state.get("youtube_results")
+        return results is not None and not results.empty
+    if stage == 2:
+        return bool(st.session_state.get("selected_creator"))
+    if stage == 3:
+        return bool(st.session_state.get("compliance_review"))
+    return bool(st.session_state.get("final_decision"))
 
-st.divider()
 
-st.header(
-    "1. Campaign Setup"
+def go_to_stage(stage):
+    st.session_state.stage = stage
+
+
+def start_new_campaign():
+    for key in (
+        "youtube_results", "creator_fit_results", "selected_creator",
+        "generated_brief", "creator_draft", "compliance_review",
+        "final_decision", "reviewer_notes", "trend_analysis",
+        *PERSISTENT_WIDGET_KEYS,
+    ):
+        st.session_state.pop(key, None)
+    st.session_state.stage = 1
+
+
+steps = []
+for number, name in enumerate(STAGES, 1):
+    current = number == st.session_state.stage
+    completed = number < st.session_state.stage and stage_ready(number)
+    css_class = "current" if current else "complete" if completed else "upcoming"
+    marker = "✓" if completed else str(number)
+    aria_current = ' aria-current="step"' if current else ""
+    steps.append(f'<li class="cp-step {css_class}"{aria_current}>{marker} · {name}</li>')
+st.markdown(
+    """
+    <style>
+    ol.cp-steps { display:flex; flex-wrap:wrap; gap:0.75rem; padding:0;
+        margin:1.5rem 0 2rem; list-style:none; }
+    .cp-steps .cp-step { flex:1 1 130px; padding:0.85rem 1rem; border-radius:10px;
+        font-weight:700; border:2px solid #E4DED2; }
+    .cp-step.current { background:#FF685F; color:#2B2B2B; border-color:#2B2B2B; }
+    .cp-step.complete { background:#2B2B2B; color:#F5F2EB; border-color:#2B2B2B; }
+    .cp-step.upcoming { background:#FFFFFF; color:#2B2B2B; opacity:0.6; }
+    .cp-decision { padding:1.25rem; border-radius:10px; font-size:1.5rem;
+        font-weight:800; border:3px solid #FF685F; background:#FFFFFF; color:#2B2B2B; }
+    .cp-decision.revise { border-color:#D99A00; background:#FFF4D6; }
+    </style>
+    <ol class="cp-steps" aria-label="Campaign progress">""" + "".join(steps) + "</ol>",
+    unsafe_allow_html=True,
 )
 
-col1, col2 = st.columns(
-    2
-)
+brand = st.session_state.get("brand", "NYC Dining Collective")
+campaign_goal = st.session_state.get("campaign_goal", "")
+target_audience = st.session_state.get("target_audience", "")
+search_topic = st.session_state.get("search_topic", "")
+df = st.session_state.get("youtube_results")
 
-with col1:
+if st.session_state.stage == 1:
+    # =========================================================
+    # CAMPAIGN SETUP
+    # =========================================================
 
-    brand = st.text_input(
-        "Brand / Client",
-        value="NYC Dining Collective"
+
+    st.header(
+        "Campaign Setup"
     )
 
-    campaign_goal = st.text_area(
-        "Campaign Goal",
-        value=(
-            "Attract younger diners by connecting the brand "
-            "with emerging NYC dining trends."
+    col1, col2 = st.columns(
+        2
+    )
+
+    with col1:
+
+        brand = st.text_input(
+            "Brand / Client",
+            value=None if "brand" in st.session_state else ("NYC Dining Collective"),
+            key="brand",
         )
-    )
 
-with col2:
-
-    target_audience = st.text_input(
-        "Target Audience",
-        value=(
-            "Gen Z and young adult diners "
-            "in New York City"
+        campaign_goal = st.text_area(
+            "Campaign Goal",
+            value=(
+                None if "campaign_goal" in st.session_state else ("Attract younger diners by connecting the brand "
+                "with emerging NYC dining trends.")
+            ),
+            key="campaign_goal",
         )
-    )
 
-    search_topic = st.text_input(
-        "YouTube Topic",
-        value=(
-            "NYC hidden gem restaurants"
+    with col2:
+
+        target_audience = st.text_input(
+            "Target Audience",
+            value=(
+                None if "target_audience" in st.session_state else ("Gen Z and young adult diners "
+                "in New York City")
+            ),
+            key="target_audience",
         )
+
+        search_topic = st.text_input(
+            "YouTube Topic",
+            value=(
+                None if "search_topic" in st.session_state else ("NYC hidden gem restaurants")
+            ),
+            key="search_topic",
+        )
+
+
+    # =========================================================
+    # TREND DISCOVERY
+    # =========================================================
+
+    st.header(
+        "Discover Emerging Content"
+    )
+
+    st.write(
+        "CreatorPulse looks at recent public YouTube activity "
+        "and ranks videos using a simple Momentum Score."
+    )
+
+    st.caption(
+        "Momentum Score = 70% view velocity + 30% performance "
+        "relative to channel size. "
+        "It is not an official YouTube trending score."
     )
 
 
-# =========================================================
-# TREND DISCOVERY
-# =========================================================
+    if st.button(
+        "🔎 Find Creator Opportunities"
+    ):
 
-st.header(
-    "2. Discover Emerging Content"
-)
+        try:
 
-st.write(
-    "CreatorPulse looks at recent public YouTube activity "
-    "and ranks videos using a simple Momentum Score."
-)
+            with st.spinner(
+                "Analyzing recent YouTube activity..."
+            ):
 
-st.caption(
-    "Momentum Score = 70% view velocity + 30% performance "
-    "relative to channel size. "
-    "It is not an official YouTube trending score."
-)
+                results = find_recent_videos(
+                    search_topic
+                )
 
+                st.session_state[
+                    "youtube_results"
+                ] = results
 
-if st.button(
-    "🔎 Find Creator Opportunities"
-):
+        except requests.exceptions.HTTPError as e:
 
-    try:
-
-        with st.spinner(
-            "Analyzing recent YouTube activity..."
-        ):
-
-            results = find_recent_videos(
-                search_topic
+            st.error(
+                "YouTube API request failed."
             )
 
-            st.session_state[
-                "youtube_results"
-            ] = results
+            with st.expander("Technical details"):
+                st.code(str(e))
 
-    except requests.exceptions.HTTPError as e:
+        except Exception as e:
 
-        st.error(
-            "YouTube API request failed."
-        )
+            st.error(
+                "Something went wrong while analyzing YouTube."
+            )
 
-        st.code(
-            str(e)
-        )
-
-    except Exception as e:
-
-        st.error(
-            "Something went wrong while analyzing YouTube."
-        )
-
-        st.code(
-            str(e)
-        )
+            with st.expander("Technical details"):
+                st.code(str(e))
 
 
-# =========================================================
-# SHOW RESULTS
-# =========================================================
+    # =========================================================
+    # SHOW RESULTS
+    # =========================================================
 
-if (
-    "youtube_results"
-    in st.session_state
-):
-
-    df = st.session_state[
+    if (
         "youtube_results"
-    ]
+        in st.session_state
+    ):
 
-    if df.empty:
+        df = st.session_state[
+            "youtube_results"
+        ]
 
-        st.warning(
-            "No recent videos were found. "
-            "Try a broader search topic."
-        )
+        if df.empty:
 
-    else:
-
-        st.success(
-            f"Found {len(df)} recent videos."
-        )
-
-
-        # =================================================
-        # TOP MOMENTUM VIDEOS
-        # =================================================
-
-        st.subheader(
-            "🔥 Highest-Momentum Videos"
-        )
-
-        top_videos = (
-            df.head(5)
-        )
-
-        for _, video in (
-            top_videos.iterrows()
-        ):
-
-            st.divider()
-
-            col1, col2 = (
-                st.columns(
-                    [1, 3]
-                )
+            st.warning(
+                "No recent videos were found. "
+                "Try a broader search topic."
             )
 
-            with col1:
+        else:
 
-                if video[
-                    "thumbnail"
-                ]:
-
-                    st.image(
-                        video[
-                            "thumbnail"
-                        ],
-                        use_container_width=True
-                    )
-
-            with col2:
-
-                st.write(
-                    f"### {video['title']}"
-                )
-
-                st.write(
-                    f"**Creator / Channel:** "
-                    f"{video['channel']}"
-                )
-
-                metric1, metric2, metric3 = (
-                    st.columns(3)
-                )
-
-                with metric1:
-
-                    st.metric(
-                        "Views",
-                        f"{int(video['views']):,}"
-                    )
-
-                with metric2:
-
-                    st.metric(
-                        "Views / Hour",
-                        f"{video['views_per_hour']:,.0f}"
-                    )
-
-                with metric3:
-
-                    st.metric(
-                        "Momentum Score",
-                        f"{int(video['momentum_score'])}/100"
-                    )
-
-                video_url = (
-                    "https://www.youtube.com/"
-                    f"watch?v={video['video_id']}"
-                )
-
-                st.markdown(
-                    f"[Open video on YouTube]({video_url})"
-                )
-
-
-        # =================================================
-        # CREATOR SHORTLIST
-        # =================================================
-
-        st.divider()
-
-        st.header(
-            "3. Creator Shortlist"
-        )
-
-        st.write(
-            "These creators are associated with the strongest "
-            "recent momentum in the search results."
-        )
-
-        creators = (
-            df
-            .drop_duplicates(
-                subset="channel_id"
+            st.success(
+                f"Found {len(df)} recent videos."
             )
-            .head(3)
-        )
 
-        creator_columns = (
-            st.columns(3)
-        )
 
-        for (
-            column,
-            (_, creator)
-        ) in zip(
-            creator_columns,
-            creators.iterrows()
-        ):
+            # =================================================
+            # TOP MOMENTUM VIDEOS
+            # =================================================
 
-            with column:
+            st.subheader(
+                "🔥 Highest-Momentum Videos"
+            )
 
-                if creator[
-                    "thumbnail"
-                ]:
+            top_videos = (
+                df.head(5)
+            )
 
-                    st.image(
-                        creator[
-                            "thumbnail"
-                        ],
-                        use_container_width=True
+            for _, video in (
+                top_videos.iterrows()
+            ):
+
+                st.divider()
+
+                col1, col2 = (
+                    st.columns(
+                        [1, 3]
                     )
-
-                st.write(
-                    f"### {creator['channel']}"
                 )
 
-                st.metric(
-                    "Momentum",
-                    f"{int(creator['momentum_score'])}/100"
-                )
+                with col1:
 
-                st.write(
-                    f"**Recent video:** "
-                    f"{creator['title']}"
-                )
+                    if video[
+                        "thumbnail"
+                    ]:
 
-                if (
-                    creator[
-                        "subscribers"
-                    ]
-                    > 0
-                ):
+                        st.image(
+                            video[
+                                "thumbnail"
+                            ],
+                            use_container_width=True
+                        )
+
+                with col2:
 
                     st.write(
-                        f"**Subscribers:** "
-                        f"{int(creator['subscribers']):,}"
+                        f"### {video['title']}"
                     )
-
-                else:
 
                     st.write(
-                        "**Subscribers:** "
-                        "Not publicly available"
+                        f"**Creator / Channel:** "
+                        f"{video['channel']}"
                     )
 
-                # =================================================
-        # CREATOR FIT SCORING
-        # =================================================
+                    metric1, metric2, metric3 = (
+                        st.columns(3)
+                    )
 
-        st.divider()
+                    with metric1:
 
-        st.header(
-            "4. Creator Fit Scoring"
-        )
+                        st.metric(
+                            "Views",
+                            f"{int(video['views']):,}"
+                        )
 
-        st.write(
-            "Gemini evaluates each shortlisted creator against "
-            "the campaign using five transparent criteria."
-        )
+                    with metric2:
 
-        st.caption(
-            "Gemini scores the individual criteria. "
-            "CreatorPulse calculates the final weighted score."
-        )
+                        st.metric(
+                            "Views / Hour",
+                            f"{video['views_per_hour']:,.0f}"
+                        )
 
-        with st.expander(
-            "How is Creator Fit calculated?"
-        ):
+                    with metric3:
+
+                        st.metric(
+                            "Momentum Score",
+                            f"{int(video['momentum_score'])}/100"
+                        )
+
+                    video_url = (
+                        "https://www.youtube.com/"
+                        f"watch?v={video['video_id']}"
+                    )
+
+                    st.markdown(
+                        f"[Open video on YouTube]({video_url})"
+                    )
+
+
+            # =========================================================
+            # METHODOLOGY EXPLANATION
+            # =========================================================
+
+            with st.expander(
+                "How does the Momentum Score work?"
+            ):
+
+                st.write(
+                    """
+        **70% — View Velocity**
+
+        Measures how quickly a video is gaining views based on
+        how long it has been published.
+
+        **30% — Performance Relative to Channel Size**
+
+        Measures how large the video's view count is compared
+        with the creator's public subscriber count.
+
+        CreatorPulse uses this as a prototype campaign-discovery
+        signal. It is not an official YouTube trending score.
+        """
+                )
+
+
+            # =================================================
+            # GEMINI TREND INTERPRETATION
+            # =================================================
+
+            st.header(
+                "Gemini Trend Interpretation"
+            )
 
             st.write(
-                """
+                "Gemini interprets the strongest YouTube signals "
+                "and explains what they may mean for the campaign."
+            )
+
+
+            if st.button(
+                "✨ Analyze Opportunity with Gemini"
+            ):
+
+                try:
+
+                    with st.spinner(
+                        "Gemini is analyzing the opportunity..."
+                    ):
+
+                        sample = (
+                            df.head(8)[
+                                [
+                                    "title",
+                                    "channel",
+                                    "views",
+                                    "views_per_hour",
+                                    "momentum_score"
+                                ]
+                            ]
+                            .to_dict(
+                                orient="records"
+                            )
+                        )
+
+                        prompt = f"""
+You are assisting a creator marketing strategist.
+
+Brand:
+{brand}
+
+Campaign Goal:
+{campaign_goal}
+
+Target Audience:
+{target_audience}
+
+YouTube Search Topic:
+{search_topic}
+
+Recent YouTube results:
+{sample}
+
+Based ONLY on the supplied YouTube results:
+
+1. Identify the clearest content pattern you observe.
+2. Explain why that pattern could matter to this campaign.
+3. Recommend two creator-content directions the brand could explore.
+4. Identify one limitation or uncertainty in the available data.
+
+Important rules:
+
+- Do not call this an official YouTube trend.
+- Do not invent audience demographics.
+- Do not invent facts about the creators.
+- Keep the response concise and useful for a marketing team.
+"""
+
+                    gemini_response, model_used = generate_with_fallback(
+                        prompt
+                    )
+
+
+                    st.success(
+                        "Gemini analysis complete!"
+                    )
+
+                    st.session_state["trend_analysis"] = gemini_response.text
+
+                except Exception as e:
+
+                    st.error(
+                        "Gemini analysis failed."
+                    )
+
+                    with st.expander("Technical details"):
+                        st.code(str(e))
+
+
+
+            if "trend_analysis" in st.session_state:
+                st.write(st.session_state["trend_analysis"])
+
+if st.session_state.stage == 2:
+    # =================================================
+    # CREATOR SHORTLIST
+    # =================================================
+
+
+    st.header(
+        "Creator Shortlist"
+    )
+
+    st.write(
+        "These creators are associated with the strongest "
+        "recent momentum in the search results."
+    )
+
+    creators = (
+        df
+        .drop_duplicates(
+            subset="channel_id"
+        )
+        .head(3)
+    )
+
+    creator_columns = (
+        st.columns(3)
+    )
+
+    for (
+        column,
+        (_, creator)
+    ) in zip(
+        creator_columns,
+        creators.iterrows()
+    ):
+
+        with column:
+
+            if creator[
+                "thumbnail"
+            ]:
+
+                st.image(
+                    creator[
+                        "thumbnail"
+                    ],
+                    use_container_width=True
+                )
+
+            st.write(
+                f"### {creator['channel']}"
+            )
+
+            st.metric(
+                "Momentum",
+                f"{int(creator['momentum_score'])}/100"
+            )
+
+            st.write(
+                f"**Recent video:** "
+                f"{creator['title']}"
+            )
+
+            if (
+                creator[
+                    "subscribers"
+                ]
+                > 0
+            ):
+
+                st.write(
+                    f"**Subscribers:** "
+                    f"{int(creator['subscribers']):,}"
+                )
+
+            else:
+
+                st.write(
+                    "**Subscribers:** "
+                    "Not publicly available"
+                )
+
+            # =================================================
+    # CREATOR FIT SCORING
+    # =================================================
+
+
+    st.header(
+        "Creator Fit Scoring"
+    )
+
+    st.write(
+        "Gemini evaluates each shortlisted creator against "
+        "the campaign using five transparent criteria."
+    )
+
+    st.caption(
+        "Gemini scores the individual criteria. "
+        "CreatorPulse calculates the final weighted score."
+    )
+
+    with st.expander(
+        "How is Creator Fit calculated?"
+    ):
+
+        st.write(
+            """
                 **30% — Campaign Relevance**
 
                 How closely the creator's observed content relates
@@ -977,32 +1176,32 @@ if (
                 Whether the supplied content appears appropriate
                 for the campaign based only on the available evidence.
                 """
+        )
+
+
+    if st.button(
+        "✨ Score Creator Fit"
+    ):
+
+        try:
+
+            creator_fit_results = []
+
+            progress = st.progress(0)
+
+            creator_list = list(
+                creators.iterrows()
             )
 
+            for position, (_, creator) in enumerate(
+                creator_list
+            ):
 
-        if st.button(
-            "✨ Score Creator Fit"
-        ):
-
-            try:
-
-                creator_fit_results = []
-
-                progress = st.progress(0)
-
-                creator_list = list(
-                    creators.iterrows()
-                )
-
-                for position, (_, creator) in enumerate(
-                    creator_list
+                with st.spinner(
+                    f"Analyzing {creator['channel']}..."
                 ):
 
-                    with st.spinner(
-                        f"Analyzing {creator['channel']}..."
-                    ):
-
-                        prompt = f"""
+                    prompt = f"""
 You are assisting a creator marketing strategist.
 
 Evaluate the creator ONLY using the supplied evidence.
@@ -1096,648 +1295,648 @@ Return ONLY valid JSON using exactly this format:
 }}
 """
 
-                        gemini_response, model_used = generate_with_fallback(
-                            prompt
-                        )
-
-                        st.caption(
-                            f"AI analysis completed using {model_used}"
-                        )
-
-                        raw_text = (
-                            gemini_response.text.strip()
-                        )
-
-                        # Remove markdown code fences if Gemini adds them
-                        raw_text = raw_text.replace(
-                            "```json",
-                            ""
-                        )
-
-                        raw_text = raw_text.replace(
-                            "```",
-                            ""
-                        ).strip()
-
-                        # Find only the JSON object
-                        start = raw_text.find("{")
-                        end = raw_text.rfind("}")
-
-                        if start == -1 or end == -1:
-
-                            raise ValueError(
-                                "Gemini did not return valid JSON."
-                            )
-
-                        result = json.loads(
-                            raw_text[
-                                start:end + 1
-                            ]
-                        )
-
-                        # ---------------------------------
-                        # KEEP SCORES BETWEEN 0 AND 100
-                        # ---------------------------------
-
-                        campaign_relevance = max(
-                            0,
-                            min(
-                                100,
-                                float(
-                                    result[
-                                        "campaign_relevance"
-                                    ]
-                                )
-                            )
-                        )
-
-                        trend_alignment = max(
-                            0,
-                            min(
-                                100,
-                                float(
-                                    result[
-                                        "trend_alignment"
-                                    ]
-                                )
-                            )
-                        )
-
-                        content_style_fit = max(
-                            0,
-                            min(
-                                100,
-                                float(
-                                    result[
-                                        "content_style_fit"
-                                    ]
-                                )
-                            )
-                        )
-
-                        recent_performance = max(
-                            0,
-                            min(
-                                100,
-                                float(
-                                    result[
-                                        "recent_performance"
-                                    ]
-                                )
-                            )
-                        )
-
-                        brand_fit = max(
-                            0,
-                            min(
-                                100,
-                                float(
-                                    result[
-                                        "brand_fit"
-                                    ]
-                                )
-                            )
-                        )
-
-
-                        # ---------------------------------
-                        # PYTHON CALCULATES FINAL SCORE
-                        # ---------------------------------
-
-                        overall_fit = round(
-                            campaign_relevance * 0.30
-                            +
-                            trend_alignment * 0.25
-                            +
-                            content_style_fit * 0.20
-                            +
-                            recent_performance * 0.15
-                            +
-                            brand_fit * 0.10
-                        )
-
-
-                        creator_fit_results.append(
-                            {
-                                "channel":
-                                    creator[
-                                        "channel"
-                                    ],
-
-                                "title":
-                                    creator[
-                                        "title"
-                                    ],
-
-                                "thumbnail":
-                                    creator[
-                                        "thumbnail"
-                                    ],
-
-                                "campaign_relevance":
-                                    round(
-                                        campaign_relevance
-                                    ),
-
-                                "trend_alignment":
-                                    round(
-                                        trend_alignment
-                                    ),
-
-                                "content_style_fit":
-                                    round(
-                                        content_style_fit
-                                    ),
-
-                                "recent_performance":
-                                    round(
-                                        recent_performance
-                                    ),
-
-                                "brand_fit":
-                                    round(
-                                        brand_fit
-                                    ),
-
-                                "overall_fit":
-                                    overall_fit,
-
-                                "explanation":
-                                    result.get(
-                                        "explanation",
-                                        ""
-                                    ),
-
-                                "risk":
-                                    result.get(
-                                        "risk",
-                                        ""
-                                    )
-                            }
-                        )
-
-                    progress.progress(
-                        (
-                            position + 1
-                        )
-                        /
-                        len(
-                            creator_list
-                        )
+                    gemini_response, model_used = generate_with_fallback(
+                        prompt
                     )
 
-
-                creator_fit_results = sorted(
-                    creator_fit_results,
-                    key=lambda x: x[
-                        "overall_fit"
-                    ],
-                    reverse=True
-                )
-
-                st.session_state[
-                    "creator_fit_results"
-                ] = creator_fit_results
-
-                st.success(
-                    "Creator Fit analysis complete!"
-                )
-
-            except Exception as e:
-
-                st.error(
-                    "Creator Fit scoring failed."
-                )
-
-                st.code(
-                    str(e)
-                )
-
-
-        # =================================================
-        # DISPLAY CREATOR FIT RESULTS
-        # =================================================
-
-        if (
-            "creator_fit_results"
-            in st.session_state
-        ):
-
-            fit_results = (
-                st.session_state[
-                    "creator_fit_results"
-                ]
-            )
-
-            st.subheader(
-                "Creator Fit Results"
-            )
-
-            st.caption(
-                "Higher scores indicate stronger alignment "
-                "with this specific campaign based on the "
-                "limited evidence supplied."
-            )
-
-            for rank, result in enumerate(
-                fit_results,
-                start=1
-            ):
-
-                st.divider()
-
-                col1, col2 = (
-                    st.columns(
-                        [1, 3]
-                    )
-                )
-
-                with col1:
-
-                    if result[
-                        "thumbnail"
-                    ]:
-
-                        st.image(
-                            result[
-                                "thumbnail"
-                            ],
-                            use_container_width=True
-                        )
-
-                with col2:
-
-                    st.write(
-                        f"### #{rank} — "
-                        f"{result['channel']}"
+                    st.caption(
+                        f"AI analysis completed using {model_used}"
                     )
 
-                    st.metric(
-                        "Overall Campaign Fit",
-                        f"{result['overall_fit']}/100"
+                    raw_text = (
+                        gemini_response.text.strip()
                     )
 
-                    score_col1, score_col2 = (
-                        st.columns(2)
+                    # Remove markdown code fences if Gemini adds them
+                    raw_text = raw_text.replace(
+                        "```json",
+                        ""
                     )
 
-                    with score_col1:
+                    raw_text = raw_text.replace(
+                        "```",
+                        ""
+                    ).strip()
 
-                        st.write(
-                            "**Campaign Relevance:** "
-                            f"{result['campaign_relevance']}/100"
+                    # Find only the JSON object
+                    start = raw_text.find("{")
+                    end = raw_text.rfind("}")
+
+                    if start == -1 or end == -1:
+
+                        raise ValueError(
+                            "Gemini did not return valid JSON."
                         )
 
-                        st.write(
-                            "**Trend Alignment:** "
-                            f"{result['trend_alignment']}/100"
-                        )
-
-                        st.write(
-                            "**Content Style Fit:** "
-                            f"{result['content_style_fit']}/100"
-                        )
-
-                    with score_col2:
-
-                        st.write(
-                            "**Recent Performance:** "
-                            f"{result['recent_performance']}/100"
-                        )
-
-                        st.write(
-                            "**Brand Fit:** "
-                            f"{result['brand_fit']}/100"
-                        )
-
-                    st.write(
-                        "**Why this creator may fit:**"
-                    )
-
-                    st.write(
-                        result[
-                            "explanation"
+                    result = json.loads(
+                        raw_text[
+                            start:end + 1
                         ]
                     )
 
-                    st.write(
-                        "**Limitation / Watchout:**"
+                    # ---------------------------------
+                    # KEEP SCORES BETWEEN 0 AND 100
+                    # ---------------------------------
+
+                    campaign_relevance = max(
+                        0,
+                        min(
+                            100,
+                            float(
+                                result[
+                                    "campaign_relevance"
+                                ]
+                            )
+                        )
                     )
 
-                    st.write(
-                        result[
-                            "risk"
-                        ]
+                    trend_alignment = max(
+                        0,
+                        min(
+                            100,
+                            float(
+                                result[
+                                    "trend_alignment"
+                                ]
+                            )
+                        )
+                    )
+
+                    content_style_fit = max(
+                        0,
+                        min(
+                            100,
+                            float(
+                                result[
+                                    "content_style_fit"
+                                ]
+                            )
+                        )
+                    )
+
+                    recent_performance = max(
+                        0,
+                        min(
+                            100,
+                            float(
+                                result[
+                                    "recent_performance"
+                                ]
+                            )
+                        )
+                    )
+
+                    brand_fit = max(
+                        0,
+                        min(
+                            100,
+                            float(
+                                result[
+                                    "brand_fit"
+                                ]
+                            )
+                        )
                     )
 
 
-                # =================================================
-        # HUMAN CREATOR SELECTION
-        # =================================================
+                    # ---------------------------------
+                    # PYTHON CALCULATES FINAL SCORE
+                    # ---------------------------------
 
-        st.divider()
-
-        st.header(
-            "5. Human Creator Selection"
-        )
-
-        st.write(
-            "CreatorPulse provides recommendations, but the marketer "
-            "makes the final creator decision."
-        )
-
-
-        # -------------------------------------------------
-        # BUILD CREATOR OPTIONS
-        # -------------------------------------------------
-
-        creator_options = []
-
-        fit_lookup = {}
+                    overall_fit = round(
+                        campaign_relevance * 0.30
+                        +
+                        trend_alignment * 0.25
+                        +
+                        content_style_fit * 0.20
+                        +
+                        recent_performance * 0.15
+                        +
+                        brand_fit * 0.10
+                    )
 
 
-        # If Creator Fit worked, use the ranked results
-        if (
-            "creator_fit_results"
-            in st.session_state
-            and st.session_state[
+                    creator_fit_results.append(
+                        {
+                            "channel":
+                                creator[
+                                    "channel"
+                                ],
+
+                            "title":
+                                creator[
+                                    "title"
+                                ],
+
+                            "thumbnail":
+                                creator[
+                                    "thumbnail"
+                                ],
+
+                            "campaign_relevance":
+                                round(
+                                    campaign_relevance
+                                ),
+
+                            "trend_alignment":
+                                round(
+                                    trend_alignment
+                                ),
+
+                            "content_style_fit":
+                                round(
+                                    content_style_fit
+                                ),
+
+                            "recent_performance":
+                                round(
+                                    recent_performance
+                                ),
+
+                            "brand_fit":
+                                round(
+                                    brand_fit
+                                ),
+
+                            "overall_fit":
+                                overall_fit,
+
+                            "explanation":
+                                result.get(
+                                    "explanation",
+                                    ""
+                                ),
+
+                            "risk":
+                                result.get(
+                                    "risk",
+                                    ""
+                                )
+                        }
+                    )
+
+                progress.progress(
+                    (
+                        position + 1
+                    )
+                    /
+                    len(
+                        creator_list
+                    )
+                )
+
+
+            creator_fit_results = sorted(
+                creator_fit_results,
+                key=lambda x: x[
+                    "overall_fit"
+                ],
+                reverse=True
+            )
+
+            st.session_state[
+                "creator_fit_results"
+            ] = creator_fit_results
+
+            st.success(
+                "Creator Fit analysis complete!"
+            )
+
+        except Exception as e:
+
+            st.error(
+                "Creator Fit scoring failed."
+            )
+
+            with st.expander("Technical details"):
+                st.code(str(e))
+
+
+    # =================================================
+    # DISPLAY CREATOR FIT RESULTS
+    # =================================================
+
+    if (
+        "creator_fit_results"
+        in st.session_state
+    ):
+
+        fit_results = (
+            st.session_state[
                 "creator_fit_results"
             ]
-        ):
-
-            fit_results = st.session_state[
-                "creator_fit_results"
-            ]
-
-            for result in fit_results:
-
-                creator_options.append(
-                    result["channel"]
-                )
-
-                fit_lookup[
-                    result["channel"]
-                ] = result
-
-
-        # If Creator Fit failed, fall back to the shortlist
-        else:
-
-            creator_options = (
-                creators[
-                    "channel"
-                ]
-                .tolist()
-            )
-
-
-        # Remove duplicates while keeping order
-        creator_options = list(
-            dict.fromkeys(
-                creator_options
-            )
         )
 
-
-        # -------------------------------------------------
-        # CREATOR DROPDOWN
-        # -------------------------------------------------
-
-        if creator_options:
-
-            selected_creator_name = st.selectbox(
-                "Choose the creator you want to continue with:",
-                creator_options
-            )
-
-
-            # ---------------------------------------------
-            # FIND FULL CREATOR DATA
-            # ---------------------------------------------
-
-            selected_rows = (
-                creators[
-                    creators[
-                        "channel"
-                    ]
-                    ==
-                    selected_creator_name
-                ]
-            )
-
-            if not selected_rows.empty:
-
-                selected_creator = (
-                    selected_rows.iloc[0]
-                )
-
-                # Save creator information for later steps
-                st.session_state[
-                    "selected_creator"
-                ] = {
-                    "channel":
-                        selected_creator[
-                            "channel"
-                        ],
-
-                    "channel_id":
-                        selected_creator[
-                            "channel_id"
-                        ],
-
-                    "title":
-                        selected_creator[
-                            "title"
-                        ],
-
-                    "description":
-                        selected_creator[
-                            "description"
-                        ],
-
-                    "views":
-                        int(
-                            selected_creator[
-                                "views"
-                            ]
-                        ),
-
-                    "subscribers":
-                        int(
-                            selected_creator[
-                                "subscribers"
-                            ]
-                        ),
-
-                    "views_per_hour":
-                        float(
-                            selected_creator[
-                                "views_per_hour"
-                            ]
-                        ),
-
-                    "momentum_score":
-                        int(
-                            selected_creator[
-                                "momentum_score"
-                            ]
-                        ),
-
-                    "thumbnail":
-                        selected_creator[
-                            "thumbnail"
-                        ]
-                }
-
-
-                # -----------------------------------------
-                # DISPLAY SELECTED CREATOR
-                # -----------------------------------------
-
-                st.success(
-                    f"Selected Creator: "
-                    f"{selected_creator_name}"
-                )
-
-                col1, col2 = st.columns(
-                    [1, 3]
-                )
-
-                with col1:
-
-                    if selected_creator[
-                        "thumbnail"
-                    ]:
-
-                        st.image(
-                            selected_creator[
-                                "thumbnail"
-                            ],
-                            use_container_width=True
-                        )
-
-
-                with col2:
-
-                    st.write(
-                        f"### {selected_creator_name}"
-                    )
-
-                    st.write(
-                        f"**Recent Video:** "
-                        f"{selected_creator['title']}"
-                    )
-
-                    st.write(
-                        f"**Momentum Score:** "
-                        f"{int(selected_creator['momentum_score'])}/100"
-                    )
-
-
-                    if (
-                        selected_creator_name
-                        in fit_lookup
-                    ):
-
-                        selected_fit = (
-                            fit_lookup[
-                                selected_creator_name
-                            ]
-                        )
-
-                        st.write(
-                            f"**Campaign Fit:** "
-                            f"{selected_fit['overall_fit']}/100"
-                        )
-
-
-                    if (
-                        int(
-                            selected_creator[
-                                "subscribers"
-                            ]
-                        )
-                        > 0
-                    ):
-
-                        st.write(
-                            f"**Subscribers:** "
-                            f"{int(selected_creator['subscribers']):,}"
-                        )
-
-                    else:
-
-                        st.write(
-                            "**Subscribers:** "
-                            "Not publicly available"
-                        )
-
-
-                st.info(
-                    "AI provides recommendations. "
-                    "The marketer makes the final creator selection."
-                )
-
-        else:
-
-            st.warning(
-                "No creators are available yet. "
-                "Run the YouTube discovery step first."
-            )
-
-                # =================================================
-        # PERSONALIZED CREATOR BRIEF
-        # =================================================
-
-        st.divider()
-
-        st.header(
-            "6. Personalized Creator Brief"
-        )
-
-        st.write(
-            "Gemini turns the campaign, trend, and selected creator "
-            "into a creator-specific campaign brief."
+        st.subheader(
+            "Creator Fit Results"
         )
 
         st.caption(
-            "The brief uses only the campaign information and "
-            "observed creator content available in CreatorPulse."
+            "Higher scores indicate stronger alignment "
+            "with this specific campaign based on the "
+            "limited evidence supplied."
+        )
+
+        for rank, result in enumerate(
+            fit_results,
+            start=1
+        ):
+
+            st.divider()
+
+            col1, col2 = (
+                st.columns(
+                    [1, 3]
+                )
+            )
+
+            with col1:
+
+                if result[
+                    "thumbnail"
+                ]:
+
+                    st.image(
+                        result[
+                            "thumbnail"
+                        ],
+                        use_container_width=True
+                    )
+
+            with col2:
+
+                st.write(
+                    f"### #{rank} — "
+                    f"{result['channel']}"
+                )
+
+                st.metric(
+                    "Overall Campaign Fit",
+                    f"{result['overall_fit']}/100"
+                )
+
+                score_col1, score_col2 = (
+                    st.columns(2)
+                )
+
+                with score_col1:
+
+                    st.write(
+                        "**Campaign Relevance:** "
+                        f"{result['campaign_relevance']}/100"
+                    )
+
+                    st.write(
+                        "**Trend Alignment:** "
+                        f"{result['trend_alignment']}/100"
+                    )
+
+                    st.write(
+                        "**Content Style Fit:** "
+                        f"{result['content_style_fit']}/100"
+                    )
+
+                with score_col2:
+
+                    st.write(
+                        "**Recent Performance:** "
+                        f"{result['recent_performance']}/100"
+                    )
+
+                    st.write(
+                        "**Brand Fit:** "
+                        f"{result['brand_fit']}/100"
+                    )
+
+                st.write(
+                    "**Why this creator may fit:**"
+                )
+
+                st.write(
+                    result[
+                        "explanation"
+                    ]
+                )
+
+                st.write(
+                    "**Limitation / Watchout:**"
+                )
+
+                st.write(
+                    result[
+                        "risk"
+                    ]
+                )
+
+
+            # =================================================
+    # HUMAN CREATOR SELECTION
+    # =================================================
+
+
+    st.header(
+        "Human Creator Selection"
+    )
+
+    st.write(
+        "CreatorPulse provides recommendations, but the marketer "
+        "makes the final creator decision."
+    )
+
+
+    # -------------------------------------------------
+    # BUILD CREATOR OPTIONS
+    # -------------------------------------------------
+
+    creator_options = []
+
+    fit_lookup = {}
+
+
+    # If Creator Fit worked, use the ranked results
+    if (
+        "creator_fit_results"
+        in st.session_state
+        and st.session_state[
+            "creator_fit_results"
+        ]
+    ):
+
+        fit_results = st.session_state[
+            "creator_fit_results"
+        ]
+
+        for result in fit_results:
+
+            creator_options.append(
+                result["channel"]
+            )
+
+            fit_lookup[
+                result["channel"]
+            ] = result
+
+
+    # If Creator Fit failed, fall back to the shortlist
+    else:
+
+        creator_options = (
+            creators[
+                "channel"
+            ]
+            .tolist()
         )
 
 
-        # -------------------------------------------------
-        # CHECK THAT A CREATOR HAS BEEN SELECTED
-        # -------------------------------------------------
+    # Remove duplicates while keeping order
+    creator_options = list(
+        dict.fromkeys(
+            creator_options
+        )
+    )
 
-        if (
-            "selected_creator"
-            in st.session_state
-        ):
+
+    # -------------------------------------------------
+    # CREATOR DROPDOWN
+    # -------------------------------------------------
+
+    if creator_options:
+
+        selected_creator_name = st.selectbox(
+            "Choose the creator you want to continue with:",
+            creator_options,
+            key="creator_choice",
+        )
+
+
+        # ---------------------------------------------
+        # FIND FULL CREATOR DATA
+        # ---------------------------------------------
+
+        selected_rows = (
+            creators[
+                creators[
+                    "channel"
+                ]
+                ==
+                selected_creator_name
+            ]
+        )
+
+        if not selected_rows.empty:
 
             selected_creator = (
-                st.session_state[
-                    "selected_creator"
-                ]
+                selected_rows.iloc[0]
             )
 
-            st.write(
-                f"**Selected Creator:** "
-                f"{selected_creator['channel']}"
+            # Save creator information for later steps
+            st.session_state[
+                "selected_creator"
+            ] = {
+                "channel":
+                    selected_creator[
+                        "channel"
+                    ],
+
+                "channel_id":
+                    selected_creator[
+                        "channel_id"
+                    ],
+
+                "title":
+                    selected_creator[
+                        "title"
+                    ],
+
+                "description":
+                    selected_creator[
+                        "description"
+                    ],
+
+                "views":
+                    int(
+                        selected_creator[
+                            "views"
+                        ]
+                    ),
+
+                "subscribers":
+                    int(
+                        selected_creator[
+                            "subscribers"
+                        ]
+                    ),
+
+                "views_per_hour":
+                    float(
+                        selected_creator[
+                            "views_per_hour"
+                        ]
+                    ),
+
+                "momentum_score":
+                    int(
+                        selected_creator[
+                            "momentum_score"
+                        ]
+                    ),
+
+                "thumbnail":
+                    selected_creator[
+                        "thumbnail"
+                    ]
+            }
+
+
+            # -----------------------------------------
+            # DISPLAY SELECTED CREATOR
+            # -----------------------------------------
+
+            st.success(
+                f"Selected Creator: "
+                f"{selected_creator_name}"
             )
 
+            col1, col2 = st.columns(
+                [1, 3]
+            )
 
-            if st.button(
-                "✨ Generate Personalized Brief"
-            ):
+            with col1:
 
-                try:
+                if selected_creator[
+                    "thumbnail"
+                ]:
 
-                    with st.spinner(
-                        "Gemini is creating the campaign brief..."
-                    ):
+                    st.image(
+                        selected_creator[
+                            "thumbnail"
+                        ],
+                        use_container_width=True
+                    )
 
-                        brief_prompt = f"""
+
+            with col2:
+
+                st.write(
+                    f"### {selected_creator_name}"
+                )
+
+                st.write(
+                    f"**Recent Video:** "
+                    f"{selected_creator['title']}"
+                )
+
+                st.write(
+                    f"**Momentum Score:** "
+                    f"{int(selected_creator['momentum_score'])}/100"
+                )
+
+
+                if (
+                    selected_creator_name
+                    in fit_lookup
+                ):
+
+                    selected_fit = (
+                        fit_lookup[
+                            selected_creator_name
+                        ]
+                    )
+
+                    st.write(
+                        f"**Campaign Fit:** "
+                        f"{selected_fit['overall_fit']}/100"
+                    )
+
+
+                if (
+                    int(
+                        selected_creator[
+                            "subscribers"
+                        ]
+                    )
+                    > 0
+                ):
+
+                    st.write(
+                        f"**Subscribers:** "
+                        f"{int(selected_creator['subscribers']):,}"
+                    )
+
+                else:
+
+                    st.write(
+                        "**Subscribers:** "
+                        "Not publicly available"
+                    )
+
+
+            st.info(
+                "AI provides recommendations. "
+                "The marketer makes the final creator selection."
+            )
+
+    else:
+
+        st.warning(
+            "No creators are available yet. "
+            "Run the YouTube discovery step first."
+        )
+
+
+if st.session_state.stage == 3:
+            # =================================================
+    # PERSONALIZED CREATOR BRIEF
+    # =================================================
+
+
+    st.header(
+        "Personalized Creator Brief"
+    )
+
+    st.write(
+        "Gemini turns the campaign, trend, and selected creator "
+        "into a creator-specific campaign brief."
+    )
+
+    st.caption(
+        "The brief uses only the campaign information and "
+        "observed creator content available in CreatorPulse."
+    )
+
+
+    # -------------------------------------------------
+    # CHECK THAT A CREATOR HAS BEEN SELECTED
+    # -------------------------------------------------
+
+    if (
+        "selected_creator"
+        in st.session_state
+    ):
+
+        selected_creator = (
+            st.session_state[
+                "selected_creator"
+            ]
+        )
+
+        st.write(
+            f"**Selected Creator:** "
+            f"{selected_creator['channel']}"
+        )
+
+
+        if st.button(
+            "✨ Generate Personalized Brief"
+        ):
+
+            try:
+
+                with st.spinner(
+                    "Gemini is creating the campaign brief..."
+                ):
+
+                    brief_prompt = f"""
 You are assisting a creator marketing strategist.
 
 Create a concise creator-specific campaign brief using ONLY
@@ -1826,138 +2025,138 @@ IMPORTANT RULES:
 - Keep the brief concise and presentation-ready.
 """
 
-                        brief_response, brief_model_used = (
-                            generate_with_fallback(
-                                brief_prompt
-                            )
+                    brief_response, brief_model_used = (
+                        generate_with_fallback(
+                            brief_prompt
                         )
-
-                        generated_brief = (
-                            brief_response.text
-                        )
-
-                        # Save the brief for later steps
-                        st.session_state[
-                            "generated_brief"
-                        ] = generated_brief
-
-
-                    st.success(
-                        "Personalized brief created!"
                     )
 
-                    st.caption(
-                        f"Generated using "
-                        f"{brief_model_used}"
+                    generated_brief = (
+                        brief_response.text
                     )
 
-                except Exception as e:
-
-                    st.error(
-                        "Brief generation failed."
-                    )
-
-                    st.code(
-                        str(e)
-                    )
-
-
-            # -------------------------------------------------
-            # DISPLAY SAVED BRIEF
-            # -------------------------------------------------
-
-            if (
-                "generated_brief"
-                in st.session_state
-            ):
-
-                st.subheader(
-                    "Campaign Brief"
-                )
-
-                st.markdown(
+                    # Save the brief for later steps
                     st.session_state[
                         "generated_brief"
-                    ]
+                    ] = generated_brief
+
+
+                st.success(
+                    "Personalized brief created!"
                 )
 
-                st.info(
-                    "This is an AI-generated first draft. "
-                    "The marketing team can revise it before "
-                    "sending it to the creator."
+                st.caption(
+                    f"Generated using "
+                    f"{brief_model_used}"
                 )
 
+            except Exception as e:
 
-        else:
+                st.error(
+                    "Brief generation failed."
+                )
 
-            st.warning(
-                "Choose a creator above before generating a brief."
+                with st.expander("Technical details"):
+                    st.code(str(e))
+
+
+        # -------------------------------------------------
+        # DISPLAY SAVED BRIEF
+        # -------------------------------------------------
+
+        if (
+            "generated_brief"
+            in st.session_state
+        ):
+
+            st.subheader(
+                "Campaign Brief"
             )
 
-                # =================================================
-        # BRAND / COMPLIANCE REVIEW
-        # =================================================
+            st.markdown(
+                st.session_state[
+                    "generated_brief"
+                ]
+            )
 
-        st.divider()
+            st.info(
+                "This is an AI-generated first draft. "
+                "The marketing team can revise it before "
+                "sending it to the creator."
+            )
 
-        st.header(
-            "7. Brand & Content Review"
+
+    else:
+
+        st.warning(
+            "Choose a creator above before generating a brief."
         )
 
-        st.write(
-            "CreatorPulse performs a first-pass review of a creator draft "
-            "against the brand guidelines supplied by the marketing team."
-        )
-
-        st.caption(
-            "Gemini only checks against the rules provided below. "
-            "A human reviewer makes the final approval decision."
-        )
+            # =================================================
+    # BRAND / COMPLIANCE REVIEW
+    # =================================================
 
 
-        # -------------------------------------------------
-        # BRAND GUIDELINES
-        # -------------------------------------------------
+    st.header(
+        "Brand & Content Review"
+    )
 
-        brand_rules = st.text_area(
-            "Brand Guidelines",
-            value="""1. Sponsored content must clearly disclose #ad.
+    st.write(
+        "CreatorPulse performs a first-pass review of a creator draft "
+        "against the brand guidelines supplied by the marketing team."
+    )
+
+    st.caption(
+        "Gemini only checks against the rules provided below. "
+        "A human reviewer makes the final approval decision."
+    )
+
+
+    # -------------------------------------------------
+    # BRAND GUIDELINES
+    # -------------------------------------------------
+
+    brand_rules = st.text_area(
+        "Brand Guidelines",
+        value=None if "brand_rules_input" in st.session_state else ("""1. Sponsored content must clearly disclose #ad.
 2. Do not say the restaurant or brand is "the best in NYC."
 3. Do not make unsupported health or nutrition claims.
 4. Do not negatively attack competing restaurants.
-5. Do not guarantee that every customer will have the same experience.""",
-            height=180
-        )
+5. Do not guarantee that every customer will have the same experience."""),
+        height=180,
+        key="brand_rules_input",
+    )
 
 
-        # -------------------------------------------------
-        # CREATOR DRAFT
-        # -------------------------------------------------
+    # -------------------------------------------------
+    # CREATOR DRAFT
+    # -------------------------------------------------
 
-        creator_draft = st.text_area(
-            "Creator Draft",
-            value="""I found the best restaurant in all of NYC and everyone is guaranteed to love it.
+    creator_draft = st.text_area(
+        "Creator Draft",
+        value=None if "creator_draft_input" in st.session_state else ("""I found the best restaurant in all of NYC and everyone is guaranteed to love it.
 
-NYC Dining Collective sent me here to check out this hidden gem. The food is incredible and you absolutely need to try it.""",
-            height=180
-        )
+NYC Dining Collective sent me here to check out this hidden gem. The food is incredible and you absolutely need to try it."""),
+        height=180,
+        key="creator_draft_input",
+    )
 
 
-        # -------------------------------------------------
-        # REVIEW BUTTON
-        # -------------------------------------------------
+    # -------------------------------------------------
+    # REVIEW BUTTON
+    # -------------------------------------------------
 
-        if st.button(
-            "🔍 Review Creator Draft"
-        ):
+    if st.button(
+        "🔍 Review Creator Draft"
+    ):
 
-            try:
+        try:
 
-                with st.spinner(
-                    "Gemini is reviewing the draft..."
-                ):
+            with st.spinner(
+                "Gemini is reviewing the draft..."
+            ):
 
-                    review_prompt = f"""
+                review_prompt = f"""
 You are performing a first-pass brand guideline review
 for a creator marketing campaign.
 
@@ -2023,360 +2222,317 @@ IMPORTANT RULES:
 - Keep suggested changes concise.
 """
 
-                    review_response, review_model_used = (
-                        generate_with_fallback(
-                            review_prompt
-                        )
+                review_response, review_model_used = (
+                    generate_with_fallback(
+                        review_prompt
                     )
-
-                    review_text = (
-                        review_response.text
-                    )
-
-                    # Save result for Step 15
-                    st.session_state[
-                        "compliance_review"
-                    ] = review_text
-
-                    st.session_state[
-                        "creator_draft"
-                    ] = creator_draft
-
-
-                st.success(
-                    "First-pass review complete!"
                 )
 
-                st.caption(
-                    f"Reviewed using "
-                    f"{review_model_used}"
+                review_text = (
+                    review_response.text
                 )
 
-            except Exception as e:
-
-                st.error(
-                    "Content review failed."
-                )
-
-                st.code(
-                    str(e)
-                )
-
-
-        # -------------------------------------------------
-        # DISPLAY SAVED REVIEW
-        # -------------------------------------------------
-
-        if (
-            "compliance_review"
-            in st.session_state
-        ):
-
-            st.subheader(
-                "Review Results"
-            )
-
-            st.markdown(
+                # Save result for Step 15
                 st.session_state[
                     "compliance_review"
-                ]
+                ] = review_text
+
+                st.session_state[
+                    "creator_draft"
+                ] = creator_draft
+
+
+            st.success(
+                "First-pass review complete!"
             )
 
-            st.info(
-                "This review is decision support only. "
-                "The marketing team retains final approval."
+            st.caption(
+                f"Reviewed using "
+                f"{review_model_used}"
             )
 
-                # =================================================
-        # FINAL HUMAN APPROVAL
-        # =================================================
+        except Exception as e:
 
-        st.divider()
+            st.error(
+                "Content review failed."
+            )
 
-        st.header(
-            "8. Final Human Approval"
+            with st.expander("Technical details"):
+                st.code(str(e))
+
+
+    # -------------------------------------------------
+    # DISPLAY SAVED REVIEW
+    # -------------------------------------------------
+
+    if (
+        "compliance_review"
+        in st.session_state
+    ):
+
+        st.subheader(
+            "Review Results"
         )
 
-        st.write(
-            "Gemini provides decision support, but the marketing team "
-            "makes the final campaign approval decision."
+        st.markdown(
+            st.session_state[
+                "compliance_review"
+            ]
+        )
+
+        st.info(
+            "This review is decision support only. "
+            "The marketing team retains final approval."
         )
 
 
-        # Only show approval controls after a review exists
-        if (
-            "compliance_review"
-            in st.session_state
+if st.session_state.stage == 4:
+            # =================================================
+    # FINAL HUMAN APPROVAL
+    # =================================================
+
+
+    st.header(
+        "Final Human Approval"
+    )
+
+    st.write(
+        "Gemini provides decision support, but the marketing team "
+        "makes the final campaign approval decision."
+    )
+
+
+    # Only show approval controls after a review exists
+    if (
+        "compliance_review"
+        in st.session_state
+    ):
+
+        final_decision = st.radio(
+            "Final Campaign Decision",
+            [
+                "Needs Revision",
+                "Approved for Launch"
+            ],
+            index=None if "final_decision_input" in st.session_state else (0),
+            key="final_decision_input",
+        )
+
+
+        reviewer_notes = st.text_area(
+            "Reviewer Notes (optional)",
+            placeholder=(
+                "Add any comments, required changes, "
+                "or approval notes here."
+            ),
+            height=120,
+            key="reviewer_notes_input",
+        )
+
+
+        if st.button(
+            "Confirm Final Decision"
         ):
 
-            final_decision = st.radio(
-                "Final Campaign Decision",
-                [
-                    "Needs Revision",
-                    "Approved for Launch"
-                ],
-                index=0
-            )
+            st.session_state[
+                "final_decision"
+            ] = final_decision
 
+            st.session_state[
+                "reviewer_notes"
+            ] = reviewer_notes
 
-            reviewer_notes = st.text_area(
-                "Reviewer Notes (optional)",
-                placeholder=(
-                    "Add any comments, required changes, "
-                    "or approval notes here."
-                ),
-                height=120
-            )
-
-
-            if st.button(
-                "Confirm Final Decision"
-            ):
-
-                st.session_state[
-                    "final_decision"
-                ] = final_decision
-
-                st.session_state[
-                    "reviewer_notes"
-                ] = reviewer_notes
-
-
-                if (
-                    final_decision
-                    ==
-                    "Approved for Launch"
-                ):
-
-                    st.success(
-                        "✅ Campaign approved for launch."
-                    )
-
-                else:
-
-                    st.warning(
-                        "⚠️ Campaign requires revision before launch."
-                    )
-
-
-        else:
-
-            st.info(
-                "Run the Brand & Content Review above "
-                "before making a final decision."
-            )
-
-
-        # -------------------------------------------------
-        # DISPLAY SAVED FINAL DECISION
-        # -------------------------------------------------
-
-        if (
-            "final_decision"
-            in st.session_state
-        ):
-
-            st.subheader(
-                "Final Decision"
-            )
-
-            decision = (
-                st.session_state[
-                    "final_decision"
-                ]
-            )
 
             if (
-                decision
+                final_decision
                 ==
                 "Approved for Launch"
             ):
 
                 st.success(
-                    "✅ Approved for Launch"
+                    "✅ Campaign approved for launch."
                 )
 
             else:
 
                 st.warning(
-                    "⚠️ Needs Revision"
+                    "⚠️ Campaign requires revision before launch."
                 )
 
 
-            if (
-                st.session_state.get(
-                    "reviewer_notes"
-                )
-            ):
+    else:
 
-                st.write(
-                    "**Reviewer Notes:**"
-                )
-
-                st.write(
-                    st.session_state[
-                        "reviewer_notes"
-                    ]
-                )
-
-
-            st.caption(
-                "Final approval is made by the human marketing team, "
-                "not by the AI system."
-            )
-            
-            
-        # =================================================
-        # GEMINI TREND INTERPRETATION
-        # =================================================
-
-        st.divider()
-
-        st.header(
-            "9. Gemini Trend Interpretation"
-        )
-
-        st.write(
-            "Gemini interprets the strongest YouTube signals "
-            "and explains what they may mean for the campaign."
+        st.info(
+            "Run the Brand & Content Review above "
+            "before making a final decision."
         )
 
 
-        if st.button(
-            "✨ Analyze Opportunity with Gemini"
+    # -------------------------------------------------
+    # DISPLAY SAVED FINAL DECISION
+    # -------------------------------------------------
+
+    if (
+        "final_decision"
+        in st.session_state
+    ):
+
+        st.subheader(
+            "Final Decision"
+        )
+
+        decision = (
+            st.session_state[
+                "final_decision"
+            ]
+        )
+
+        if (
+            decision
+            ==
+            "Approved for Launch"
         ):
 
-            try:
+            st.success(
+                "✅ Approved for Launch"
+            )
 
-                with st.spinner(
-                    "Gemini is analyzing the opportunity..."
-                ):
+        else:
 
-                    sample = (
-                        df.head(8)[
-                            [
-                                "title",
-                                "channel",
-                                "views",
-                                "views_per_hour",
-                                "momentum_score"
-                            ]
-                        ]
-                        .to_dict(
-                            orient="records"
-                        )
-                    )
-
-                    prompt = f"""
-You are assisting a creator marketing strategist.
-
-Brand:
-{brand}
-
-Campaign Goal:
-{campaign_goal}
-
-Target Audience:
-{target_audience}
-
-YouTube Search Topic:
-{search_topic}
-
-Recent YouTube results:
-{sample}
-
-Based ONLY on the supplied YouTube results:
-
-1. Identify the clearest content pattern you observe.
-2. Explain why that pattern could matter to this campaign.
-3. Recommend two creator-content directions the brand could explore.
-4. Identify one limitation or uncertainty in the available data.
-
-Important rules:
-
-- Do not call this an official YouTube trend.
-- Do not invent audience demographics.
-- Do not invent facts about the creators.
-- Keep the response concise and useful for a marketing team.
-"""
-
-                gemini_response, model_used = generate_with_fallback(
-                    prompt
-                )
-        
-
-                st.success(
-                    "Gemini analysis complete!"
-                )
-
-                st.write(
-                    gemini_response.text
-                )
-
-            except Exception as e:
-
-                st.error(
-                    "Gemini analysis failed."
-                )
-
-                st.code(
-                    str(e)
-                )
+            st.warning(
+                "⚠️ Needs Revision"
+            )
 
 
-# =========================================================
-# METHODOLOGY EXPLANATION
-# =========================================================
+        if (
+            st.session_state.get(
+                "reviewer_notes"
+            )
+        ):
 
-st.divider()
+            st.write(
+                "**Reviewer Notes:**"
+            )
 
-with st.expander(
-    "How does the Momentum Score work?"
-):
+            st.write(
+                st.session_state[
+                    "reviewer_notes"
+                ]
+            )
 
-    st.write(
-        """
-        **70% — View Velocity**
 
-        Measures how quickly a video is gaining views based on
-        how long it has been published.
+        st.caption(
+            "Final approval is made by the human marketing team, "
+            "not by the AI system."
+        )
 
-        **30% — Performance Relative to Channel Size**
 
-        Measures how large the video's view count is compared
-        with the creator's public subscriber count.
 
-        CreatorPulse uses this as a prototype campaign-discovery
-        signal. It is not an official YouTube trending score.
-        """
+    st.header("Campaign summary")
+    summary_creator = st.session_state.get("selected_creator", {})
+    summary_fit = next(
+        (item for item in st.session_state.get("creator_fit_results", [])
+         if item["channel"] == summary_creator.get("channel")),
+        {},
+    )
+    fit_score = f"{summary_fit['overall_fit']}/100" if summary_fit else "—"
+    st.write(f"**Brand:** {brand}")
+    st.write(f"**Target audience:** {target_audience}")
+    st.write(f"**YouTube topic:** {search_topic}")
+    if summary_creator.get("thumbnail"):
+        st.image(summary_creator["thumbnail"], width=160)
+    st.write(f"**Selected creator:** {summary_creator.get('channel', '—')}")
+    st.metric("Overall fit score", fit_score)
+    with st.expander("Generated brief"):
+        st.markdown(st.session_state.get("generated_brief", "Not started"))
+    st.subheader("Review result summary")
+    st.markdown(st.session_state.get("compliance_review", "—"))
+    saved_decision = st.session_state.get("final_decision")
+    if saved_decision:
+        approved = saved_decision == "Approved for Launch"
+        banner_class = "cp-decision" if approved else "cp-decision revise"
+        banner_text = "✅ Approved for Launch" if approved else "⚠️ Needs Revision"
+        st.markdown(
+            f'<div class="{banner_class}" role="status">{banner_text}</div>',
+            unsafe_allow_html=True,
+        )
+    else:
+        st.info("Confirm your final decision above to complete the campaign.")
+    st.write("**Reviewer notes:**")
+    st.write(st.session_state.get("reviewer_notes") or "—")
+
+    campaign_markdown = (
+        "# CreatorPulse campaign summary\n\n"
+        f"**Brand:** {brand}\n\n"
+        f"**Campaign goal:** {campaign_goal}\n\n"
+        f"**Target audience:** {target_audience}\n\n"
+        f"**YouTube topic:** {search_topic}\n\n"
+        f"**Selected creator:** {summary_creator.get('channel', '—')}\n\n"
+        f"**Overall fit score:** {fit_score}\n\n"
+        "## Generated brief\n\n"
+        f"{st.session_state.get('generated_brief', 'Not started')}\n\n"
+        "## Review result\n\n"
+        f"{st.session_state.get('compliance_review', '—')}\n\n"
+        "## Final decision\n\n"
+        f"{saved_decision or '—'}\n\n"
+        "## Reviewer notes\n\n"
+        f"{st.session_state.get('reviewer_notes') or '—'}\n"
+    )
+    st.download_button(
+        "Download campaign summary", data=campaign_markdown,
+        file_name="creatorpulse_campaign_summary.md", mime="text/markdown",
     )
 
+# Render after stage actions so the sidebar reflects changes immediately.
+with st.sidebar:
+    st.header("Campaign")
+    st.write(f"**Brand:** {st.session_state.get('brand') or '—'}")
+    st.write(f"**Topic:** {st.session_state.get('search_topic') or '—'}")
+    sidebar_results = st.session_state.get("youtube_results")
+    video_count = len(sidebar_results) if sidebar_results is not None else "—"
+    st.write(f"**Videos found:** {video_count}")
+    sidebar_creator = st.session_state.get("selected_creator", {})
+    st.write(f"**Selected creator:** {sidebar_creator.get('channel', '—')}")
+    sidebar_fit = next(
+        (item for item in st.session_state.get("creator_fit_results", [])
+         if item["channel"] == sidebar_creator.get("channel")), {},
+    )
+    sidebar_score = f"{sidebar_fit['overall_fit']}/100" if sidebar_fit else "—"
+    st.write(f"**Fit score:** {sidebar_score}")
+    brief_status = "Drafted" if st.session_state.get("generated_brief") else "Not started"
+    st.write(f"**Brief status:** {brief_status}")
+    review_status = "—"
+    if st.session_state.get("compliance_review"):
+        review_status = "Reviewed"
+        for line in st.session_state["compliance_review"].splitlines():
+            if line.strip().strip("*") in ("PASS", "REVISE", "BLOCK"):
+                review_status = line.strip().strip("*")
+                break
+    st.write(f"**Review status:** {review_status}")
+    st.write(f"**Final decision:** {st.session_state.get('final_decision') or '—'}")
+    for number, name in enumerate(STAGES, 1):
+        if number < st.session_state.stage and stage_ready(number):
+            st.button(
+                f"✓ {name}", key=f"jump_stage_{number}",
+                on_click=go_to_stage, args=(number,), use_container_width=True,
+            )
 
-# =========================================================
-# CURRENT BUILD STATUS
-# =========================================================
-
-st.divider()
-
-st.header(
-    "Current Prototype Status"
-)
-
-st.write(
-    """
-    **Completed in this version:**
-
-    - Campaign setup
-    - YouTube trend discovery
-    - Momentum Score
-    - Top-video ranking
-    - Creator shortlist
-    - Gemini trend interpretation
-
-    **Next build step:**
-
-    Creator Fit Scoring — evaluate how well each shortlisted
-    creator fits the specific campaign.
-    """
-)
-
+back_column, next_column = st.columns(2)
+with back_column:
+    if st.session_state.stage > 1 and st.button("← Back"):
+        st.session_state.stage -= 1
+        st.rerun()
+with next_column:
+    if st.session_state.stage < 4:
+        ready = stage_ready(st.session_state.stage)
+        if st.button(f"Next: {STAGES[st.session_state.stage]} →", disabled=not ready):
+            st.session_state.stage += 1
+            st.rerun()
+        if not ready:
+            st.caption({
+                1: "Find creator opportunities to continue.",
+                2: "Choose a creator in Human Creator Selection to continue.",
+                3: "Run Review Creator Draft to continue.",
+            }[st.session_state.stage])
+    else:
+        st.button("Start a new campaign", on_click=start_new_campaign)
