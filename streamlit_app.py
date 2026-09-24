@@ -146,7 +146,7 @@ st.markdown(
       <div class="cp-brand">
         <h1 class="cp-title"><img class="cp-logo" src="data:image/svg+xml;base64,{logo_data}" alt="CreatorPulse" /></h1>
       </div>
-      <p class="cp-sub">Find NYC dining creators who are gaining momentum right now, check how well they fit your campaign, and take one from brief to approval.</p>
+      <p class="cp-sub">AI-powered creator discovery that turns emerging trends into campaign-ready creator matches.</p>
     </div>
     """,
     unsafe_allow_html=True,
