@@ -24,7 +24,7 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Figtree:wght@400;500;600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Rubik:ital,wght@0,300..900;1,300..900&family=Figtree:wght@400;500;600;700&display=swap');
 
     :root {
         --coral: #FF685F;
@@ -42,8 +42,8 @@ st.markdown(
     header[data-testid="stHeader"] { background: transparent; }
     .block-container { padding-top: 2.5rem; max-width: 1200px; }
 
-    h1, h2, h3 {
-        font-family: 'Bricolage Grotesque', sans-serif;
+    h1, h2, h3, h4, h5, h6 {
+        font-family: 'Rubik', sans-serif;
         color: var(--ink);
         letter-spacing: -0.02em;
     }
@@ -114,14 +114,15 @@ st.markdown(
         margin: 1.25rem 0;
     }
     .cp-logo {
-        width: clamp(2.5rem, 6vw, 4.75rem);
+        display: block;
+        width: 638px;
+        max-width: 100%;
         height: auto;
-        flex-shrink: 0;
     }
     .cp-title {
         margin: 0;
         padding: 0;
-        font-family: 'Bricolage Grotesque', sans-serif;
+        font-family: 'Rubik', sans-serif;
         font-weight: 800;
         font-size: clamp(2.8rem, 7vw, 5.2rem);
         line-height: 0.95;
@@ -143,8 +144,7 @@ st.markdown(
     <div class="cp-hero">
       <span class="cp-badge">NYU SPS × Google Hackathon</span>
       <div class="cp-brand">
-        <img class="cp-logo" src="data:image/svg+xml;base64,{logo_data}" alt="" />
-        <h1 class="cp-title">CreatorPulse<span class="dot">.</span></h1>
+        <h1 class="cp-title"><img class="cp-logo" src="data:image/svg+xml;base64,{logo_data}" alt="CreatorPulse" /></h1>
       </div>
       <p class="cp-sub">Find NYC dining creators who are gaining momentum right now, check how well they fit your campaign, and take one from brief to approval.</p>
     </div>
