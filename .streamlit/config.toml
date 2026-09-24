@@ -1,0 +1,14 @@
+[theme]
+base = "light"
+primaryColor = "#FF685F"
+backgroundColor = "#F5F2EB"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#2B2B2B"
+borderColor = "#E4DED2"
+showWidgetBorder = true
+baseRadius = "10px"
+font = "Figtree:https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&display=swap"
+headingFont = "Bricolage Grotesque:https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&display=swap"
+
+[client]
+toolbarMode = "minimal"

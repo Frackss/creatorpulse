@@ -19,16 +19,115 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("🍽️ CreatorPulse")
-st.subheader("AI-powered creator discovery for the NYC dining scene")
+st.markdown(
+    """
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Figtree:wght@400;500;600;700&display=swap');
 
-st.write(
-    "Discover emerging YouTube dining content, identify creators "
-    "showing momentum, and use Gemini to interpret campaign opportunities."
+    :root {
+        --coral: #FF685F;
+        --coral-dark: #E8524A;
+        --ink: #2B2B2B;
+        --cream: #F5F2EB;
+        --white: #FFFFFF;
+        --line: #E4DED2;
+    }
+
+    #MainMenu, footer, [data-testid="stDecoration"],
+    .stAppDeployButton, [data-testid="stStatusWidget"] {
+        display: none;
+    }
+    header[data-testid="stHeader"] { background: transparent; }
+    .block-container { padding-top: 2.5rem; max-width: 1200px; }
+
+    h1, h2, h3 {
+        font-family: 'Bricolage Grotesque', sans-serif;
+        color: var(--ink);
+        letter-spacing: -0.02em;
+    }
+    h2 { font-weight: 800; }
+
+    .stButton > button, .stDownloadButton > button {
+        background: var(--coral);
+        color: var(--ink);
+        border: 2px solid var(--ink);
+        font-weight: 700;
+        padding: 0.55rem 1.2rem;
+        box-shadow: 3px 3px 0 var(--ink);
+        transition: background-color 150ms ease, transform 150ms ease,
+                    box-shadow 150ms ease;
+    }
+    .stButton > button:hover, .stDownloadButton > button:hover {
+        background: var(--coral-dark);
+        color: var(--ink);
+        border-color: var(--ink);
+    }
+    .stButton > button:active, .stDownloadButton > button:active {
+        transform: translate(3px, 3px);
+        box-shadow: none;
+    }
+    .stButton > button:focus-visible, .stDownloadButton > button:focus-visible {
+        outline: 3px solid var(--ink);
+        outline-offset: 3px;
+    }
+
+    [data-testid="stMetric"] {
+        background: var(--white);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 0.9rem 1rem;
+    }
+    [data-testid="stMetricValue"] {
+        font-family: 'Bricolage Grotesque', sans-serif;
+        font-weight: 800;
+    }
+    [data-testid="stExpander"] {
+        background: var(--white);
+        border-radius: 10px;
+    }
+    [data-testid="stImage"] img { border-radius: 10px; }
+    hr { border-color: var(--line); }
+
+    @media (prefers-reduced-motion: reduce) {
+        .stButton > button, .stDownloadButton > button { transition: none; }
+    }
+
+    .cp-hero {
+        border-bottom: 2px solid var(--ink);
+        padding-bottom: 1.75rem;
+    }
+    .cp-badge {
+        display: inline-block;
+        background: var(--ink);
+        color: var(--cream);
+        border-radius: 999px;
+        padding: 0.4rem 0.75rem;
+        font-size: 0.8rem;
+        font-weight: 600;
+    }
+    .cp-title {
+        font-family: 'Bricolage Grotesque', sans-serif;
+        font-weight: 800;
+        font-size: clamp(2.8rem, 7vw, 5.2rem);
+        line-height: 0.95;
+        letter-spacing: -0.04em;
+    }
+    .cp-title .dot { color: var(--coral); }
+    .cp-sub { font-size: 1.2rem; max-width: 60ch; opacity: 0.85; }
+    </style>
+    """,
+    unsafe_allow_html=True,
 )
 
-st.caption(
-    "NYU SPS × Google Hackathon prototype"
+st.markdown(
+    """
+    <div class="cp-hero">
+      <span class="cp-badge">NYU SPS × Google Hackathon</span>
+      <h1 class="cp-title">CreatorPulse<span class="dot">.</span></h1>
+      <p class="cp-sub">Find NYC dining creators who are gaining momentum right now, check how well they fit your campaign, and take one from brief to approval.</p>
+    </div>
+    """,
+    unsafe_allow_html=True,
 )
 
 
