@@ -269,7 +269,7 @@ def youtube_request(endpoint, params):
 # FIND RECENT YOUTUBE VIDEOS
 # =========================================================
 
-@st.cache_data(ttl=600)
+@st.cache_data(ttl=3600)
 def find_recent_videos(
     search_term,
     days_back=14,
@@ -646,6 +646,136 @@ def find_recent_videos(
     )
 
 
+DEMO_PATH = Path(__file__).parent / "demo" / "demo_campaign.json"
+DEMO_KEYS = (
+    "youtube_results", "trend_analysis", "creator_fit_results", "selected_creator",
+    "generated_brief", "compliance_review", "brand", "campaign_goal",
+    "target_audience", "search_topic", "brand_rules_input", "creator_draft_input",
+)
+
+
+def save_demo_snapshot():
+    snapshot = {key: st.session_state[key] for key in DEMO_KEYS
+                if key in st.session_state and key != "youtube_results"}
+    df = st.session_state.get("youtube_results", pd.DataFrame())
+    snapshot["youtube_results"] = json.loads(df.to_json(orient="records", date_format="iso"))
+    snapshot["datetime_columns"] = [
+        column for column in df.columns if pd.api.types.is_datetime64_any_dtype(df[column])
+    ]
+    snapshot["saved_at"] = datetime.now(timezone.utc).isoformat()
+    snapshot["is_demo"] = True
+    DEMO_PATH.parent.mkdir(parents=True, exist_ok=True)
+    DEMO_PATH.write_text(json.dumps(snapshot, indent=2, ensure_ascii=False), encoding="utf-8")
+    read_demo_snapshot.clear()
+    return DEMO_PATH
+
+
+@st.cache_data
+def read_demo_snapshot(path, modified):
+    # The modification timestamp invalidates cached reads after a new snapshot.
+    snapshot = json.loads(Path(path).read_text(encoding="utf-8"))
+    if not isinstance(snapshot, dict) or snapshot.get("is_demo") is not True:
+        raise ValueError("Invalid sample campaign")
+    datetime.fromisoformat(snapshot["saved_at"])
+    records = snapshot["youtube_results"]
+    if not isinstance(records, list) or not records:
+        raise ValueError("Sample campaign has no videos")
+    df = pd.DataFrame(records)
+    required = {"channel", "channel_id", "title", "description", "thumbnail", "views",
+                "subscribers", "views_per_hour", "momentum_score", "video_id"}
+    if not required.issubset(df.columns):
+        raise ValueError("Sample campaign is missing video fields")
+    columns = snapshot.get("datetime_columns", [])
+    if not isinstance(columns, list):
+        raise ValueError("Invalid datetime columns")
+    for column in columns:
+        df[column] = pd.to_datetime(df[column], utc=True)
+    for key in DEMO_KEYS:
+        if key not in snapshot or key == "youtube_results":
+            continue
+        value = snapshot[key]
+        if key == "creator_fit_results":
+            if not isinstance(value, list) or any(not isinstance(item, dict) for item in value):
+                raise ValueError("Invalid creator fit results")
+            fit_keys = {"channel", "title", "thumbnail", "overall_fit", "campaign_relevance",
+                        "trend_alignment", "content_style_fit", "recent_performance", "brand_fit", "explanation", "risk"}
+            if any(not fit_keys.issubset(item) for item in value):
+                raise ValueError("Incomplete creator fit results")
+        elif key == "selected_creator":
+            if not isinstance(value, dict) or not (required - {"video_id"}).issubset(value):
+                raise ValueError("Invalid selected creator")
+        elif not isinstance(value, str):
+            raise ValueError("Invalid sample text")
+    snapshot["youtube_results"] = df
+    return snapshot
+
+
+def available_demo_snapshot():
+    try:
+        return read_demo_snapshot(str(DEMO_PATH), DEMO_PATH.stat().st_mtime_ns)
+    except (OSError, ValueError, TypeError, KeyError, OverflowError):
+        return None
+
+
+def load_demo_snapshot():
+    snapshot = available_demo_snapshot()
+    if snapshot is None:
+        st.warning("Sample campaign isn't available yet.")
+        return False
+    # Never restore an old approval or leak the previous campaign into the sample.
+    for key in (*DEMO_KEYS, "creator_draft", "final_decision", "reviewer_notes",
+                *PERSISTENT_WIDGET_KEYS):
+        st.session_state.pop(key, None)
+    for key in DEMO_KEYS:
+        if key in snapshot:
+            st.session_state[key] = snapshot[key]
+    selected = snapshot.get("selected_creator", {}).get("channel")
+    options = [item["channel"] for item in snapshot.get("creator_fit_results", [])]
+    if not options:
+        options = snapshot["youtube_results"].drop_duplicates("channel_id").head(3)["channel"].tolist()
+    if selected in options:
+        st.session_state["creator_choice"] = selected
+    st.session_state.demo_mode = True
+    st.session_state.demo_saved_at = snapshot["saved_at"]
+    return True
+
+
+def use_saved_demo_result(key):
+    if not st.session_state.get("demo_mode", False):
+        return False
+    snapshot = available_demo_snapshot()
+    if snapshot is None or not snapshot.get(key):
+        return False
+    st.session_state[key] = snapshot[key]
+    st.info("Gemini is unavailable, so this shows the saved sample result.")
+    return True
+
+
+def prepare_live_search():
+    st.session_state.demo_mode = False
+    # Do not label outputs from the old sample as results of a new live search.
+    for key in ("youtube_results", "trend_analysis", "creator_fit_results", "selected_creator",
+                "generated_brief", "compliance_review", "creator_draft", "final_decision",
+                "reviewer_notes", "demo_saved_at", "creator_choice", "final_decision_input",
+                "reviewer_notes_input", "manual_review_confirmed", "manual_review_notes"):
+        st.session_state.pop(key, None)
+
+
+def handle_youtube_error(error, message):
+    if available_demo_snapshot() is not None:
+        st.session_state["_load_demo_pending"] = True
+        st.session_state["_youtube_fallback_error"] = str(error)
+        st.rerun()
+    st.error(message)
+    with st.expander("Technical details"):
+        st.code(str(error))
+
+
+# Load before campaign widgets are instantiated, so their saved values can be restored.
+if st.session_state.pop("_load_demo_pending", False):
+    if load_demo_snapshot():
+        st.session_state.stage = 1
+
 # Stage navigation is gated by the existing workflow results.
 def stage_ready(stage):
     if stage == 1:
@@ -667,6 +797,7 @@ def start_new_campaign():
         "youtube_results", "creator_fit_results", "selected_creator",
         "generated_brief", "creator_draft", "compliance_review",
         "final_decision", "reviewer_notes", "trend_analysis",
+        "demo_mode", "demo_saved_at", "_youtube_fallback_error", "_load_demo_pending", "_saved_demo_json",
         *PERSISTENT_WIDGET_KEYS,
     ):
         st.session_state.pop(key, None)
@@ -698,6 +829,14 @@ st.markdown(
     <ol class="cp-steps" aria-label="Campaign progress">""" + "".join(steps) + "</ol>",
     unsafe_allow_html=True,
 )
+
+if st.session_state.get("demo_mode", False):
+    saved_date = datetime.fromisoformat(st.session_state.demo_saved_at).strftime("%b %d")
+    st.markdown(
+        f'<span style="display:inline-block;padding:0.35rem 0.75rem;border-radius:999px;'
+        f'background:#F5F2EB;border:1px solid #E4DED2;color:#2B2B2B;font-size:0.8rem;">'
+        f'Sample campaign · saved {saved_date}</span>', unsafe_allow_html=True,
+    )
 
 brand = st.session_state.get("brand", "NYC Dining Collective")
 campaign_goal = st.session_state.get("campaign_goal", "")
@@ -776,10 +915,25 @@ if st.session_state.stage == 1:
     )
 
 
-    if st.button(
-        "🔎 Find Creator Opportunities"
-    ):
+    live_column, sample_column = st.columns(2)
+    with live_column:
+        find_clicked = st.button("🔎 Find Creator Opportunities", on_click=prepare_live_search)
+    with sample_column:
+        st.markdown(
+            '<style>.st-key-load_sample button, .st-key-load_sample button:hover {background:#FFFFFF;color:#2B2B2B;'
+            'border:2px solid #2B2B2B;}</style>', unsafe_allow_html=True,
+        )
+        if st.button("▶ Load sample campaign", key="load_sample", type="secondary"):
+            st.session_state["_load_demo_pending"] = True
+            st.rerun()
 
+    if "_youtube_fallback_error" in st.session_state:
+        st.info("Live YouTube data is unavailable right now, so we loaded a saved sample campaign.")
+        with st.expander("Technical details"):
+            st.code(st.session_state.pop("_youtube_fallback_error"))
+
+    if find_clicked:
+        st.session_state.demo_mode = False
         try:
 
             with st.spinner(
@@ -796,21 +950,11 @@ if st.session_state.stage == 1:
 
         except requests.exceptions.HTTPError as e:
 
-            st.error(
-                "YouTube API request failed."
-            )
-
-            with st.expander("Technical details"):
-                st.code(str(e))
+            handle_youtube_error(e, "YouTube API request failed.")
 
         except Exception as e:
 
-            st.error(
-                "Something went wrong while analyzing YouTube."
-            )
-
-            with st.expander("Technical details"):
-                st.code(str(e))
+            handle_youtube_error(e, "Something went wrong while analyzing YouTube.")
 
 
     # =========================================================
@@ -1034,9 +1178,8 @@ Important rules:
 
                 except Exception as e:
 
-                    st.error(
-                        "Gemini analysis failed."
-                    )
+                    if not use_saved_demo_result("trend_analysis"):
+                        st.error("Gemini analysis failed.")
 
                     with st.expander("Technical details"):
                         st.code(str(e))
@@ -1505,9 +1648,8 @@ Return ONLY valid JSON using exactly this format:
 
         except Exception as e:
 
-            st.error(
-                "Creator Fit scoring failed."
-            )
+            if not use_saved_demo_result("creator_fit_results"):
+                st.error("Creator Fit scoring failed.")
 
             with st.expander("Technical details"):
                 st.code(str(e))
@@ -2053,9 +2195,8 @@ IMPORTANT RULES:
 
             except Exception as e:
 
-                st.error(
-                    "Brief generation failed."
-                )
+                if not use_saved_demo_result("generated_brief"):
+                    st.error("Brief generation failed.")
 
                 with st.expander("Technical details"):
                     st.code(str(e))
@@ -2254,9 +2395,8 @@ IMPORTANT RULES:
 
         except Exception as e:
 
-            st.error(
-                "Content review failed."
-            )
+            if not use_saved_demo_result("compliance_review"):
+                st.error("Content review failed.")
 
             with st.expander("Technical details"):
                 st.code(str(e))
@@ -2474,6 +2614,8 @@ if st.session_state.stage == 4:
 
 
     st.header("Campaign summary")
+    data_source = "saved sample campaign" if st.session_state.get("demo_mode") else "live YouTube data"
+    st.write(f"Data source: {data_source}")
     summary_creator = st.session_state.get("selected_creator", {})
     summary_fit = next(
         (item for item in st.session_state.get("creator_fit_results", [])
@@ -2508,6 +2650,7 @@ if st.session_state.stage == 4:
 
     campaign_markdown = (
         "# CreatorPulse campaign summary\n\n"
+        f"Data source: {data_source}\n\n"
         f"**Brand:** {brand}\n\n"
         f"**Campaign goal:** {campaign_goal}\n\n"
         f"**Target audience:** {target_audience}\n\n"
@@ -2531,6 +2674,20 @@ if st.session_state.stage == 4:
 # Render after stage actions so the sidebar reflects changes immediately.
 with st.sidebar:
     st.header("Campaign")
+    st.write("**Mode:** Sample campaign" if st.session_state.get("demo_mode") else "**Mode:** Live data")
+    if st.query_params.get("admin") == "1":
+        if st.button("💾 Save demo snapshot"):
+            try:
+                saved_path = save_demo_snapshot()
+                st.session_state["_saved_demo_json"] = saved_path.read_text(encoding="utf-8")
+                st.success(f"Saved demo snapshot: {saved_path}")
+            except (OSError, TypeError, ValueError) as error:
+                st.error("Could not save the demo snapshot.")
+                with st.expander("Technical details"):
+                    st.code(str(error))
+        if "_saved_demo_json" in st.session_state:
+            st.download_button("Download demo snapshot", st.session_state["_saved_demo_json"],
+                               file_name="demo_campaign.json", mime="application/json")
     st.write(f"**Brand:** {st.session_state.get('brand') or '—'}")
     st.write(f"**Topic:** {st.session_state.get('search_topic') or '—'}")
     sidebar_results = st.session_state.get("youtube_results")
