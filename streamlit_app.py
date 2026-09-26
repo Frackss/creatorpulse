@@ -928,17 +928,7 @@ if st.session_state.stage == 1:
     )
 
 
-    live_column, sample_column = st.columns(2)
-    with live_column:
-        find_clicked = st.button("🔎 Find Creator Opportunities", on_click=prepare_live_search)
-    with sample_column:
-        st.markdown(
-            '<style>.st-key-load_sample button, .st-key-load_sample button:hover {background:#FFFFFF;color:#2B2B2B;'
-            'border:2px solid #2B2B2B;}</style>', unsafe_allow_html=True,
-        )
-        if st.button("▶ Load sample campaign", key="load_sample", type="secondary"):
-            st.session_state["_load_demo_pending"] = True
-            st.rerun()
+    find_clicked = st.button("🔎 Find Creator Opportunities", on_click=prepare_live_search)
 
     if "_youtube_fallback_error" in st.session_state:
         st.info("Live YouTube data is unavailable right now, so we loaded a saved sample campaign.")
