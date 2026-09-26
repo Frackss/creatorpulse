@@ -804,31 +804,44 @@ def start_new_campaign():
     st.session_state.stage = 1
 
 
-steps = []
-for number, name in enumerate(STAGES, 1):
+# Native buttons preserve the Streamlit session when jumping to a completed stage.
+progress_styles = []
+for number in range(1, 5):
     current = number == st.session_state.stage
     completed = number < st.session_state.stage and stage_ready(number)
-    css_class = "current" if current else "complete" if completed else "upcoming"
-    marker = "✓" if completed else str(number)
-    aria_current = ' aria-current="step"' if current else ""
-    steps.append(f'<li class="cp-step {css_class}"{aria_current}>{marker} · {name}</li>')
+    background = "#FF685F" if current else "#2B2B2B" if completed else "#FFFFFF"
+    foreground = "#F5F2EB" if completed else "#2B2B2B"
+    border = "#2B2B2B" if current or completed else "#E4DED2"
+    opacity = "1" if current or completed else "0.6"
+    progress_styles.append(
+        f".st-key-progress_step_{number} button, "
+        f".st-key-progress_step_{number} button:hover, "
+        f".st-key-progress_step_{number} button:disabled {{background:{background};"
+        f"color:{foreground};border:2px solid {border};opacity:{opacity};"
+        "box-shadow:none;padding:0.85rem 1rem;border-radius:10px;"
+        "font-weight:700;transform:none;}"
+    )
 st.markdown(
-    """
-    <style>
-    ol.cp-steps { display:flex; flex-wrap:wrap; gap:0.75rem; padding:0;
-        margin:1.5rem 0 2rem; list-style:none; }
-    .cp-steps .cp-step { flex:1 1 130px; padding:0.85rem 1rem; border-radius:10px;
-        font-weight:700; border:2px solid #E4DED2; }
-    .cp-step.current { background:#FF685F; color:#2B2B2B; border-color:#2B2B2B; }
-    .cp-step.complete { background:#2B2B2B; color:#F5F2EB; border-color:#2B2B2B; }
-    .cp-step.upcoming { background:#FFFFFF; color:#2B2B2B; opacity:0.6; }
+    "<style>" + "".join(progress_styles) + """
+    .st-key-campaign_progress button:enabled:hover { filter:brightness(1.15); }
+    .st-key-campaign_progress button:focus-visible { outline:3px solid #2B2B2B; outline-offset:3px; }
     .cp-decision { padding:1.25rem; border-radius:10px; font-size:1.5rem;
         font-weight:800; border:3px solid #FF685F; background:#FFFFFF; color:#2B2B2B; }
     .cp-decision.revise { border-color:#D99A00; background:#FFF4D6; }
-    </style>
-    <ol class="cp-steps" aria-label="Campaign progress">""" + "".join(steps) + "</ol>",
+    </style>""",
     unsafe_allow_html=True,
 )
+with st.container(key="campaign_progress"):
+    for number, (name, column) in enumerate(zip(STAGES, st.columns(4)), 1):
+        completed = number < st.session_state.stage and stage_ready(number)
+        marker = "✓" if completed else str(number)
+        with column:
+            st.button(
+                f"{marker} · {name}", key=f"progress_step_{number}",
+                disabled=not completed, on_click=go_to_stage, args=(number,),
+                use_container_width=True,
+                help=f"Back to {name}" if completed else None,
+            )
 
 if st.session_state.get("demo_mode", False):
     saved_date = datetime.fromisoformat(st.session_state.demo_saved_at).strftime("%b %d")
